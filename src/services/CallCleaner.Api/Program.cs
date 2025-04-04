@@ -47,24 +47,25 @@ builder.Services.AddSwaggerGen(options =>
 
 builder.Services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
 builder.Services.AddDbContext<DataContext>(option => option.UseNpgsql(builder.Configuration.GetConnectionString("PostgreConnection")));
+builder.Services.AddMemoryCache();
 
-//Jwt security ayarlarý
+//Jwt security ayarlarÄ±
 //builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 //    .AddJwtBearer("Admin", options =>
 //    {
 //        options.TokenValidationParameters = new()
 //        {
-//            ValidateAudience = true, //Oluþturulacak token deðerini kimlerin/hangi originlerin/sitelerin kullanýcý belirlediðimiz deðerdir. -> www.bilmemne.com
-//            ValidateIssuer = true, //Oluþturulacak token deðerini kimin daðýttýný ifade edeceðimiz alandýr. -> www.myapi.com
-//            ValidateLifetime = true, //Oluþturulan token deðerinin süresini kontrol edecek olan doðrulamadýr.
-//            ValidateIssuerSigningKey = true, //Üretilecek token deðerinin uygulamamýza ait bir deðer olduðunu ifade eden suciry key verisinin doðrulanmasýdýr.
+//            ValidateAudience = true, //OluÅŸturulacak token deÄŸerini kimlerin/hangi originlerin/sitelerin kullanÄ±cÄ± belirlediÄŸimiz deÄŸerdir. -> www.bilmemne.com
+//            ValidateIssuer = true, //OluÅŸturulacak token deÄŸerini kimin daÄŸÄ±ttÄ±nÄ± ifade edeceÄŸimiz alandÄ±r. -> www.myapi.com
+//            ValidateLifetime = true, //OluÅŸturulan token deÄŸerinin sÃ¼resini kontrol edecek olan doÄŸrulamadÄ±r.
+//            ValidateIssuerSigningKey = true, //Ãœretilecek token deÄŸerinin uygulamamÄ±za ait bir deÄŸer olduÄŸunu ifade eden suciry key verisinin doÄŸrulanmasÄ±dÄ±r.
 
 //            ValidAudience = builder.Configuration["Token:Audience"],
 //            ValidIssuer = builder.Configuration["Token:Issuer"],
 //            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Token:SecurityKey"])),
 //            LifetimeValidator = (notBefore, expires, securityToken, validationParameters) => expires != null ? expires > DateTime.UtcNow : false,
 
-//            NameClaimType = ClaimTypes.Name //JWT üzerinde Name claimne karþýlýk gelen deðeri AppUser.Identity.Name propertysinden elde edebiliriz.
+//            NameClaimType = ClaimTypes.Name //JWT Ã¼zerinde Name claimne karÅŸÄ±lÄ±k gelen deÄŸeri AppUser.Identity.Name propertysinden elde edebiliriz.
 //        };
 //    });
 
@@ -115,7 +116,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI(c =>
     {
-        // Sayfadaki ögelerin expand özelliðini kapatýr. Sayfa boyutunu düþürmek ve donmalarý
+        // Sayfadaki Ã¶gelerin expand Ã¶zelliÄŸini kapatÄ±r. Sayfa boyutunu dÃ¼ÅŸÃ¼rmek ve donmalarÄ±
         c.DocExpansion(DocExpansion.List);
         c.SwaggerEndpoint($"/swagger/v1/swagger.json", "CallCleaner v1 API");
     });

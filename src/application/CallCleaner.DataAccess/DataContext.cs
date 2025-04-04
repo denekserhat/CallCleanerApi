@@ -16,6 +16,14 @@ namespace CallCleaner.DataAccess
             AppContext.SetSwitch("Npgsql.DisableDateTimeInfinityConversions", true);
         }
 
+        // Uygulama Entity'leri için DbSet'ler
+        public DbSet<WhitelistEntry> WhitelistEntries { get; set; }
+        public DbSet<UserSettings> UserSettings { get; set; }
+        public DbSet<SpamReport> SpamReports { get; set; }
+        public DbSet<ReportedNumber> ReportedNumbers { get; set; }
+        public DbSet<NumberComment> NumberComments { get; set; }
+        public DbSet<BlockedCall> BlockedCalls { get; set; }
+
         protected override void OnModelCreating(ModelBuilder builder)
         {
 
@@ -30,6 +38,10 @@ namespace CallCleaner.DataAccess
             builder.Entity<IdentityUserClaim<int>>(entity => entity.ToTable(name: "UserClaims", schema: "authentication"));
             builder.Entity<IdentityRoleClaim<int>>(entity => entity.ToTable(name: "RoleClaims", schema: "authentication"));
             #endregion
+
+            // TODO: Uygulama entity'leri için ek konfigürasyonlar (ilişkiler, indexler, kısıtlamalar)
+            // Örnek: builder.Entity<UserSettings>().ToTable("UserSettings", schema: "application");
+            // Örnek: builder.Entity<UserSettings>().HasOne(us => us.User).WithOne(u => u.Settings).HasForeignKey<UserSettings>(us => us.UserId);
 
         }
 
