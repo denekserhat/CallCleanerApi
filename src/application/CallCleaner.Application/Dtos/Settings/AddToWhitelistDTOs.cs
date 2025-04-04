@@ -10,4 +10,4 @@ namespace CallCleaner.Application.Dtos.Settings
     {
         public string Message { get; set; }
     }
-} 
+}

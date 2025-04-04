@@ -8,6 +8,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Caching.Memory;
 using System.Text;
+using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 
 namespace CallCleaner.Api.Controllers;
 
@@ -269,5 +271,36 @@ public class AuthController : ControllerBase
                 Message = "Geçersiz doğrulama linki."
             });
         }
+    }
+
+    [HttpGet("verify-token")]
+    [Authorize]
+    public IActionResult VerifyToken()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null)
+        {
+            return Unauthorized(new ApiResponseDTO<object> { Success = false, Message = "Invalid token: User ID not found." });
+        }
+
+        return Ok(new { userId = userId, isValid = true });
+    }
+
+    [HttpPut("update-profile")]
+    [Authorize]
+    public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequestDTO model)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null)
+        {
+            return Unauthorized(new ApiResponseDTO<object> { Success = false, Message = "Invalid token: User ID not found." });
+        }
+
+        if (!ModelState.IsValid)
+            return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Invalid input", Errors = ModelState.Values.SelectMany(v => v.Errors.Select(e => e.ErrorMessage)) });
+
+        await Task.CompletedTask;
+
+        return Ok(new ApiResponseDTO<object> { Success = true, Message = "Profile updated successfully." });
     }
 }
