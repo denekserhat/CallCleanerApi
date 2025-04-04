@@ -1,8 +1,6 @@
-using CallCleaner.Application.Dtos.BlockedCalls; // Varsayılan
 using CallCleaner.Application.Dtos.Core; // Varsayılan
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Threading.Tasks;
 
 namespace CallCleaner.Api.Controllers;
 
@@ -10,7 +8,7 @@ namespace CallCleaner.Api.Controllers;
 [Consumes("application/json")]
 [ApiController]
 [Route("api/blocked-calls")]
-[Authorize] // Bu controller'daki tüm endpointler yetkilendirme gerektiriyor
+[Authorize]
 public class BlockedCallsController : ControllerBase
 {
     // TODO: Gerekli servisleri inject et (örneğin IBlockedCallsService)
@@ -66,4 +64,4 @@ public class BlockedCallsController : ControllerBase
         return Ok(new ApiResponseDTO<object> { Success = true, Message = "Call reported as incorrectly blocked." });
         // Hata yanıtı örneği: return NotFound(new ApiResponseDTO<object> { Success = false, Message = "Record not found" });
     }
-} 
+}
