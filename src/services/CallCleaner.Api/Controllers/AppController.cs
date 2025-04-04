@@ -1,8 +1,9 @@
-using CallCleaner.Application.Dtos.App; // Varsayılan
-using CallCleaner.Application.Dtos.Core; // Varsayılan
+using CallCleaner.Application.Dtos.App;
+using CallCleaner.Application.Dtos.Core;
+using CallCleaner.Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Threading.Tasks;
+using System.Security.Claims;
 
 namespace CallCleaner.Api.Controllers;
 
@@ -12,6 +13,12 @@ namespace CallCleaner.Api.Controllers;
 [Route("api/app")]
 public class AppController : ControllerBase
 {
+    private readonly IAppService _appService;
+    public AppController(IAppService appService)
+    {
+        _appService = appService;
+    }
+
     // TODO: Gerekli servisleri veya konfigürasyonu inject et
     // public AppController(IConfiguration config) { ... }
 
@@ -19,20 +26,16 @@ public class AppController : ControllerBase
     // DTO ismi tahmin ediliyor: AppVersionInfoDTO
     public async Task<IActionResult> GetAppVersion()
     {
-        // TODO: Uygulama sürüm bilgilerini getirme mantığı (config'den alınabilir)
-        await Task.CompletedTask;
-        // Örnek Yanıt DTO: AppVersionInfoDTO
-        return Ok(new { Message = "Endpoint not implemented yet." }); // Geçici yanıt
+        var versionInfo = await _appService.GetAppVersionAsync();
+        return Ok(versionInfo); // DTO doğrudan döndürülüyor
     }
 
     [HttpGet("required-permissions")]
     // DTO ismi tahmin ediliyor: List<RequiredPermissionDTO>
     public async Task<IActionResult> GetRequiredPermissions()
     {
-        // TODO: Gerekli izinleri listeleme mantığı (sabit liste olabilir)
-        await Task.CompletedTask;
-        // Örnek Yanıt DTO: List<RequiredPermissionDTO>
-        return Ok(new { Message = "Endpoint not implemented yet." }); // Geçici yanıt
+        var permissions = await _appService.GetRequiredPermissionsAsync();
+        return Ok(permissions); // List<PermissionDTO> doğrudan döndürülüyor
     }
 
     [HttpPost("verify-permissions")]
@@ -40,11 +43,19 @@ public class AppController : ControllerBase
     // DTO isimleri tahmin ediliyor: VerifyPermissionsRequestDTO, VerifyPermissionsResponseDTO
     public async Task<IActionResult> VerifyPermissions([FromBody] VerifyPermissionsRequestDTO model)
     {
-        // TODO: Verilen izinleri doğrulama mantığı
-        if (!ModelState.IsValid) return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Invalid input", Errors = ModelState.Values.SelectMany(v => v.Errors.Select(e => e.ErrorMessage)) });
-        await Task.CompletedTask;
-        // Örnek Yanıt DTO: VerifyPermissionsResponseDTO
-        return Ok(new { Message = "Endpoint not implemented yet." }); // Geçici yanıt
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null)
+        {
+            return Unauthorized(new ApiResponseDTO<object> { Success = false, Message = "Invalid token: User ID not found." });
+        }
+
+        // ModelState kontrolü burada gereksiz olabilir çünkü servis hata döndürmeyecek,
+        // ancak API tutarlılığı için kalabilir.
+        if (!ModelState.IsValid)
+            return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Invalid input", Errors = ModelState.Values.SelectMany(v => v.Errors.Select(e => e.ErrorMessage)) });
+
+        var verificationResult = await _appService.VerifyPermissionsAsync(userId, model);
+        return Ok(verificationResult); // DTO doğrudan döndürülüyor
     }
 
     // Gizlilik politikası endpoint'i ayrı bir controller'da (örn. LegalController) veya burada olabilir.
@@ -53,9 +64,7 @@ public class AppController : ControllerBase
     // DTO ismi tahmin ediliyor: PrivacyPolicyInfoDTO
     public async Task<IActionResult> GetPrivacyPolicy()
     {
-        // TODO: Gizlilik politikası bilgilerini getirme mantığı (config'den alınabilir)
-        await Task.CompletedTask;
-        // Örnek Yanıt DTO: PrivacyPolicyInfoDTO
-        return Ok(new { Message = "Endpoint not implemented yet." }); // Geçici yanıt
+        var policyInfo = await _appService.GetPrivacyPolicyAsync();
+        return Ok(policyInfo); // DTO doğrudan döndürülüyor
     }
-} 
+}

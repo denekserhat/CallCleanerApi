@@ -1,15 +1,29 @@
 using CallCleaner.Application.Dtos.Reports;
 using CallCleaner.Application.Dtos.Core;
+using CallCleaner.DataAccess;
+using CallCleaner.Entities.Concrete;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System;
+using System.Linq;
 
 namespace CallCleaner.Application.Services;
 
 public class ReportService : IReportService
 {
-    // TODO: Gerekli bağımlılıkları inject et (örn. DbContext)
-    // public ReportService(...) { ... }
+    private readonly DataContext _context;
+    private readonly UserManager<AppUser> _userManager;
+    private readonly AutoMapper.IMapper _mapper;
+
+    // Constructor enjeksiyonu
+    public ReportService(DataContext context, UserManager<AppUser> userManager, AutoMapper.IMapper mapper)
+    {
+        _context = context;
+        _userManager = userManager;
+        _mapper = mapper;
+    }
 
     public async Task<SubmitReportResponseDTO> SubmitReportAsync(string userId, SubmitReportRequestDTO model)
     {
