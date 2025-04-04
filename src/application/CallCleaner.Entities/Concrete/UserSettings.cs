@@ -15,27 +15,27 @@ namespace CallCleaner.Entities.Concrete
         /// <summary>
         /// Kullanıcının engelleme modu
         /// </summary>
-        public BlockingMode BlockingMode { get; private set; } = BlockingMode.Known; // Varsayılan değer
+        public BlockingMode BlockingMode { get; set; } = BlockingMode.Known;
 
         /// <summary>
         /// Engelin geçerli olduğu saat dilimi
         /// </summary>
-        public WorkingHoursMode WorkingHoursMode { get; private set; } = WorkingHoursMode.TwentyFourSeven;
+        public WorkingHoursMode WorkingHoursMode { get; set; } = WorkingHoursMode.TwentyFourSeven;
 
         /// <summary>
         /// Kullanıcının engelleme başlangıç saati
         /// </summary>
-        public TimeOnly? CustomStartTime { get; private set; }
+        public TimeOnly? CustomStartTime { get; set; }
 
         /// <summary>
         /// Kullanıcının engelleme bitiş saati
         /// </summary>
-        public TimeOnly? CustomEndTime { get; private set; }
+        public TimeOnly? CustomEndTime { get; set; }
 
         /// <summary>
         /// Engel bildirim durumu
         /// </summary>
-        public bool NotificationsEnabled { get; private set; } = true;
+        public bool NotificationsEnabled { get; set; } = true;
 
         public virtual AppUser User { get; private set; } = null!;
     }

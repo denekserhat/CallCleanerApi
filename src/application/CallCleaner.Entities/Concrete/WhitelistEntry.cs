@@ -10,17 +10,17 @@ namespace CallCleaner.Entities.Concrete
         /// <summary>
         /// Kullanıcı ID'si
         /// </summary>
-        public int UserId { get; private set; }
+        public int UserId { get; set; }
 
         /// <summary>
         /// Kullanıcının rehberinde bulunan numara
         /// </summary>
-        public string PhoneNumber { get; private set; }
+        public string PhoneNumber { get; set; }
 
         /// <summary>
         /// Kullanıcının rehberindeki numaranın sahibi
         /// </summary>
-        public string? Name { get; private set; }
+        public string? Name { get; set; }
 
         /// <summary>
         /// Engelleyen kullanıcı bilgileri
