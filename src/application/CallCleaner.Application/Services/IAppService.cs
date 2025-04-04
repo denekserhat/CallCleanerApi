@@ -4,13 +4,9 @@ namespace CallCleaner.Application.Services;
 
 public interface IAppService
 {
-    // DTO isimleri güncellendi
     Task<GetAppVersionResponseDTO> GetAppVersionAsync();
-    // DTO ismi PermissionDTO olarak düzeltildi
     Task<List<PermissionDTO>> GetRequiredPermissionsAsync();
-    // VerifyPermissions userId gerektirir
-    Task<VerifyPermissionsResponseDTO> VerifyPermissionsAsync(string userId, VerifyPermissionsRequestDTO model);
-    // DTO ismi tahmin edildi: GetPrivacyPolicyResponseDTO
+    Task<VerifyPermissionsResponseDTO> VerifyPermissionsAsync(int userId, VerifyPermissionsRequestDTO model);
     Task<GetPrivacyPolicyResponseDTO> GetPrivacyPolicyAsync();
 }
 
@@ -31,7 +27,6 @@ public class AppService : IAppService
             UpdateUrl = "market://details?id=com.callcleaner"
         };
     }
-
     public async Task<List<PermissionDTO>> GetRequiredPermissionsAsync()
     {
         // TODO: Gerekli izinleri sabit liste veya config'den getir
@@ -45,7 +40,7 @@ public class AppService : IAppService
         };
     }
 
-    public async Task<VerifyPermissionsResponseDTO> VerifyPermissionsAsync(string userId, VerifyPermissionsRequestDTO model)
+    public async Task<VerifyPermissionsResponseDTO> VerifyPermissionsAsync(int userId, VerifyPermissionsRequestDTO model)
     {
         // TODO: Kullanıcının verdiği izinleri kontrol et (belki loglama?)
         await Task.Delay(10);

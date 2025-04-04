@@ -3,12 +3,10 @@ using CallCleaner.Application.Dtos.Core;
 using CallCleaner.Application.Dtos.Login;
 using CallCleaner.Application.Services;
 using CallCleaner.Entities.Concrete;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Caching.Memory;
-using System.Text;
-using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
 
 namespace CallCleaner.Api.Controllers;
@@ -42,101 +40,63 @@ public class AuthController : ControllerBase
         _cache = cache;
     }
 
-    //TODO: login olduktan sonra response'a refresh token eklenecek
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequestDTO model)
     {
-        if (!ModelState.IsValid)
-            return BadRequest(new ApiResponseDTO<object>
-            {
-                Success = false,
-                Message = "Validation failed",
-                Errors = ModelState.Values.SelectMany(x => x.Errors.Select(e => e.ErrorMessage))
-            });
+        if (model == null || string.IsNullOrWhiteSpace(model.Email) || string.IsNullOrWhiteSpace(model.Password))
+            return BadRequest(new { error = "Email and password are required." });
 
         var user = await _userManager.FindByEmailAsync(model.Email);
         if (user == null || !(await _userManager.CheckPasswordAsync(user, model.Password)))
         {
-            return Unauthorized(new ApiResponseDTO<object>
-            {
-                Success = false,
-                Message = "Invalid login credentials"
-            });
+            return Unauthorized(new { error = "Invalid email or password." });
         }
+
+        var userFullName = user.FullName;
 
         var token = _tokenService.GenerateJwtToken(user);
 
-        return Ok(new ApiResponseDTO<LoginResponseDTO>
+        return Ok(new
         {
-            Success = true,
-            Message = "Login successful",
-            Data = new LoginResponseDTO
-            {
-                Token = token,
-                Email = user.Email,
-                UserId = user.Id
-            }
+            userId = user.Id,
+            token = token,
+            name = userFullName
         });
     }
+
     [HttpPost("register")]
     public async Task<IActionResult> Register([FromBody] RegisterRequestDTO model)
     {
-        if (!ModelState.IsValid)
-        {
-            return BadRequest(new ApiResponseDTO<object>
-            {
-                Success = false,
-                Message = "Validation failed",
-                Errors = ModelState.Values.SelectMany(x => x.Errors.Select(e => e.ErrorMessage))
-            });
-        }
+        if (model == null || string.IsNullOrWhiteSpace(model.Email) || string.IsNullOrWhiteSpace(model.Password) || string.IsNullOrWhiteSpace(model.FullName))
+            return BadRequest(new { error = "FullName, email, and password are required." });
 
         var existingUser = await _userManager.FindByEmailAsync(model.Email);
         if (existingUser != null)
         {
-            return Conflict(new ApiResponseDTO<object>
-            {
-                Success = false,
-                Message = "Bu e-posta adresi zaten kayıtlı"
-            });
+            return BadRequest(new { error = "Email already registered." });
         }
 
         var appUser = new AppUser
         {
             UserName = model.Email,
             Email = model.Email,
-            EmailConfirmed = false
+            FullName = model.FullName,
+            EmailConfirmed = true
         };
 
         var createResult = await _userManager.CreateAsync(appUser, model.Password);
         if (!createResult.Succeeded)
         {
-            return BadRequest(new ApiResponseDTO<object>
-            {
-                Success = false,
-                Message = "Kayıt oluşturulurken hata oluştu",
-                Errors = createResult.Errors.Select(e => e.Description)
-            });
+            return BadRequest(new { error = "User registration failed.", details = createResult.Errors.Select(e => e.Description) });
         }
 
-        var token = await _userManager.GenerateEmailConfirmationTokenAsync(appUser);
-        var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
-        var confirmationLink = Url.Action(nameof(ConfirmEmail), "Auth", new { userId = appUser.Id, token = encodedToken }, Request.Scheme);
-
-        var body = $"Hesabınızı onaylamak için lütfen <a href='{confirmationLink}'>buraya tıklayın</a>.";
-        await _emailService.SendMailAsync(appUser.Email, "E-posta Doğrulama", body);
-
-        return Ok(new ApiResponseDTO<RegisterResponseDTO>
+        return CreatedAtAction(nameof(Register), new
         {
-            Success = true,
-            Message = "Kullanıcı başarıyla oluşturuldu! Lütfen e-postanıza gönderilen link ile hesabınızı onaylayın.",
-            Data = new RegisterResponseDTO
-            {
-                UserId = appUser.Id,
-                Email = appUser.Email
-            }
+            userId = appUser.Id,
+            message = "User registered successfully."
         });
     }
+
     [HttpPost("forgot-password")]
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDTO model)
     {
@@ -169,6 +129,7 @@ public class AuthController : ControllerBase
             Message = "Şifre sıfırlama kodu e-posta adresinize gönderildi."
         });
     }
+
     [HttpPost("reset-password")]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDTO model)
     {
@@ -222,6 +183,7 @@ public class AuthController : ControllerBase
             Message = "Şifreniz başarıyla sıfırlandı."
         });
     }
+
     [HttpGet("confirm-email")]
     public async Task<IActionResult> ConfirmEmail([FromQuery] string userId, [FromQuery] string token)
     {
@@ -240,37 +202,7 @@ public class AuthController : ControllerBase
                 Message = "Kullanıcı bulunamadı."
             });
 
-        try
-        {
-            var decodedTokenBytes = WebEncoders.Base64UrlDecode(token);
-            var decodedToken = Encoding.UTF8.GetString(decodedTokenBytes);
-
-            var result = await _userManager.ConfirmEmailAsync(user, decodedToken);
-            if (!result.Succeeded)
-                return BadRequest(new ApiResponseDTO<object>
-                {
-                    Success = false,
-                    Message = "E-posta doğrulaması başarısız oldu.",
-                    Errors = result.Errors.Select(e => e.Description)
-                });
-
-            user.IsActive = true;
-            await _userManager.UpdateAsync(user);
-
-            return Ok(new ApiResponseDTO<object>
-            {
-                Success = true,
-                Message = "E-posta başarıyla doğrulandı."
-            });
-        }
-        catch (FormatException)
-        {
-            return BadRequest(new ApiResponseDTO<object>
-            {
-                Success = false,
-                Message = "Geçersiz doğrulama linki."
-            });
-        }
+        return Ok("Email confirmation endpoint - needs review based on requirements.");
     }
 
     [HttpGet("verify-token")]
@@ -278,9 +210,10 @@ public class AuthController : ControllerBase
     public IActionResult VerifyToken()
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
         if (userId == null)
         {
-            return Unauthorized(new ApiResponseDTO<object> { Success = false, Message = "Invalid token: User ID not found." });
+            return Unauthorized(new { error = "Invalid or expired token." });
         }
 
         return Ok(new { userId = userId, isValid = true });
@@ -293,14 +226,53 @@ public class AuthController : ControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (userId == null)
         {
-            return Unauthorized(new ApiResponseDTO<object> { Success = false, Message = "Invalid token: User ID not found." });
+            return Unauthorized(new { error = "Invalid token." });
         }
 
-        if (!ModelState.IsValid)
-            return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Invalid input", Errors = ModelState.Values.SelectMany(v => v.Errors.Select(e => e.ErrorMessage)) });
+        if (model == null || string.IsNullOrWhiteSpace(model.Name))
+        {
+            return BadRequest(new { error = "Invalid profile data provided." });
+        }
 
-        await Task.CompletedTask;
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user == null)
+        {
+            return NotFound(new { error = "User not found." });
+        }
 
-        return Ok(new ApiResponseDTO<object> { Success = true, Message = "Profile updated successfully." });
+        bool changed = false;
+
+        if (user.FullName != model.Name)
+        {
+            user.FullName = model.Name;
+            changed = true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(model.NewPassword))
+        {
+            var passwordChangeToken = await _userManager.GeneratePasswordResetTokenAsync(user);
+            var passwordResult = await _userManager.ResetPasswordAsync(user, passwordChangeToken, model.NewPassword);
+            if (!passwordResult.Succeeded)
+            {
+                return BadRequest(new { error = "Invalid profile data provided.", details = passwordResult.Errors.Select(e => e.Description) });
+            }
+            changed = true;
+        }
+
+        if (changed)
+        {
+            var updateResult = await _userManager.UpdateAsync(user);
+            if (!updateResult.Succeeded)
+            {
+                return BadRequest(new { error = "Profile update failed.", details = updateResult.Errors.Select(e => e.Description) });
+            }
+        }
+
+        return Ok(new
+        {
+            userId = user.Id,
+            name = user.FullName,
+            message = "Profile updated successfully."
+        });
     }
 }

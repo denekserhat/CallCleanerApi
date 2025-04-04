@@ -1,9 +1,7 @@
-using CallCleaner.Application.Dtos.Core;
 using CallCleaner.Application.Services; // IBlockedCallsService için eklendi
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Threading.Tasks;
-using System.Security.Claims; // UserId almak için eklendi
+using System.Security.Claims;
 
 namespace CallCleaner.Api.Controllers;
 
@@ -15,87 +13,100 @@ namespace CallCleaner.Api.Controllers;
 public class BlockedCallsController : ControllerBase
 {
     private readonly IBlockedCallsService _blockedCallsService;
-
-    // Constructor enjeksiyonu
     public BlockedCallsController(IBlockedCallsService blockedCallsService)
     {
         _blockedCallsService = blockedCallsService;
     }
 
+    private string GetUserIdString() => User.FindFirstValue(ClaimTypes.NameIdentifier);
+
     [HttpGet]
     public async Task<IActionResult> GetBlockedCalls([FromQuery] int page = 1, [FromQuery] int limit = 20)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (userId == null) return Unauthorized();
+        var userId = GetUserIdString();
+        if (userId == null)
+            return Unauthorized(new { error = "Invalid token." });
 
-        // Sayfa ve limit validasyonu eklenebilir
         if (page < 1) page = 1;
-        if (limit < 1) limit = 10;
-        if (limit > 100) limit = 100; // Max limit
-
+        if (limit < 1) limit = 1;
         var response = await _blockedCallsService.GetBlockedCallsAsync(userId, page, limit);
-        return Ok(response); // GetBlockedCallsResponseDTO döndürür
+
+        if (response == null)
+            return Ok(new { calls = new List<object>(), pagination = new { currentPage = page, totalPages = 0, totalCount = 0 } });
+
+        return Ok(response);
     }
 
     [HttpGet("stats")]
     public async Task<IActionResult> GetStats()
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (userId == null) return Unauthorized();
+        var userId = GetUserIdString();
+        if (userId == null)
+            return Unauthorized(new { error = "Invalid token." });
 
         var stats = await _blockedCallsService.GetStatsAsync(userId);
-        return Ok(stats); // GetBlockedCallsStatsResponseDTO döndürür
+
+        if (stats == null)
+            return Ok(new { today = 0, thisWeek = 0, total = 0 });
+
+        return Ok(stats);
     }
 
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteBlockedCall(string id)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (userId == null) return Unauthorized();
+        var userId = GetUserIdString();
+        if (userId == null)
+            return Unauthorized(new { error = "Invalid token." });
 
-        if (string.IsNullOrWhiteSpace(id)) return BadRequest("ID cannot be empty.");
+        if (string.IsNullOrWhiteSpace(id))
+            return BadRequest(new { error = "Blocked call ID is required." });
 
         var result = await _blockedCallsService.DeleteBlockedCallAsync(userId, id);
+
+        if (result == null)
+            return BadRequest(new { error = "Failed to delete blocked call record." });
+
         if (!result.Success)
-        {
-            // Mesaj "Blocked call record not found." ise NotFound dön
-            if (result.Message.Contains("not found"))
-            {
-                return NotFound(result);
-            }
-            return BadRequest(result);
-        }
-        return Ok(result);
+            return NotFound(new { error = "Blocked call record not found." });
+
+        // Use spec success format
+        return Ok(new { message = "Blocked call record deleted successfully." });
     }
 
-    [HttpDelete]
+    [HttpDelete] // DELETE /api/blocked-calls
     public async Task<IActionResult> DeleteAllBlockedCalls()
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (userId == null) return Unauthorized();
+        var userId = GetUserIdString();
+        if (userId == null)
+            return Unauthorized(new { error = "Invalid token." });
 
         var result = await _blockedCallsService.DeleteAllBlockedCallsAsync(userId);
-        // Bu işlem genellikle başarılı olur, ama yine de kontrol edilebilir
-        return Ok(result);
+
+        if (result == null || !result.Success)
+            return BadRequest(new { error = "Failed to delete all blocked call records." });
+
+        return Ok(new { message = "All blocked call records deleted successfully." });
     }
 
     [HttpPut("{id}/report-wrong")]
     public async Task<IActionResult> ReportWronglyBlocked(string id)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (userId == null) return Unauthorized();
+        var userId = GetUserIdString();
+        if (userId == null)
+            return Unauthorized(new { error = "Invalid token." });
 
-        if (string.IsNullOrWhiteSpace(id)) return BadRequest("ID cannot be empty.");
+        if (string.IsNullOrWhiteSpace(id))
+            return BadRequest(new { error = "Blocked call ID is required." });
 
         var result = await _blockedCallsService.ReportWronglyBlockedAsync(userId, id);
+
+        if (result == null)
+            return BadRequest(new { error = "Failed to report call." });
+
         if (!result.Success)
-        {
-            if (result.Message.Contains("not found"))
-            {
-                return NotFound(result);
-            }
-            return BadRequest(result);
-        }
-        return Ok(result);
+            return NotFound(new { error = "Blocked call record not found." });
+
+        return Ok(new { message = "Call reported as incorrectly blocked." });
     }
 }

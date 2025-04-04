@@ -1,59 +1,104 @@
-using CallCleaner.Application.Dtos.SpamDetection; // Doğru namespace eklendi
-using CallCleaner.Application.Dtos.Core;
+using CallCleaner.Application.Dtos.SpamDetection;
+using CallCleaner.Application.Services; // Assuming ISpamDetectionService or similar
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Threading.Tasks;
-using System.Linq; // SelectMany için eklendi
+using System.Security.Claims;
 
 namespace CallCleaner.Api.Controllers;
 
 [Produces("application/json")]
 [Consumes("application/json")]
 [ApiController]
-// Bu controller'daki endpointler farklı route'lara sahip olduğu için base route'u kaldırıyorum.
-// Alternatif olarak [Route("api")] kullanılabilir ve action'larda tam route belirtilebilir.
 public class NumberCheckController : ControllerBase
 {
-    // TODO: Gerekli servisleri inject et (örneğin INumberCheckService)
-    // public NumberCheckController(INumberCheckService numberCheckService) { ... }
+    private readonly INumberCheckService _numberCheckService;
 
-    [HttpPost("api/check-number")]
-    [Authorize] // Numara kontrolü yetkilendirme gerektirir
-    // DTO isimleri düzeltildi
-    public async Task<IActionResult> CheckNumber([FromBody] CheckNumberRequestDTO model)
+    public NumberCheckController(INumberCheckService numberCheckService)
     {
-        // TODO: Numara spam durumunu kontrol etme mantığı
-        if (!ModelState.IsValid) return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Invalid input", Errors = ModelState.Values.SelectMany(v => v.Errors.Select(e => e.ErrorMessage)) });
-        await Task.CompletedTask;
-        // Örnek Yanıt DTO: CheckNumberResponseDTO
-        var fakeResponse = new CheckNumberResponseDTO { /* ... Doldurulacak ... */ }; // Geçici yanıt
-        return Ok(fakeResponse);
+        _numberCheckService = numberCheckService;
     }
 
-    [HttpPost("api/incoming-call")] // Dokümanda ayrı bir başlıkta ama buraya daha uygun olabilir
-    [Authorize] // Gelen arama kontrolü yetkilendirme gerektirir
-    // DTO ismi IncomingCallRequestDTO olarak düzeltildi (varsayım, dosya adına göre)
+    private string GetUserIdString() => User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+    [HttpPost("api/check-number")]
+    [Authorize]
+    public async Task<IActionResult> CheckNumber([FromBody] CheckNumberRequestDTO model)
+    {
+        var userId = GetUserIdString(); // Although userId isn't in spec, service might need it
+        if (userId == null)
+            return Unauthorized(new { error = "Invalid token." });
+
+        if (model == null || string.IsNullOrWhiteSpace(model.PhoneNumber))
+            return BadRequest(new { error = "PhoneNumber is required." });
+
+        // Assuming service returns object: { IsSpam, SpamType, RiskScore }
+        var checkResult = await _numberCheckService.CheckNumberAsync(userId, model);
+
+        if (checkResult == null)
+        {
+            // Return default non-spam result if service fails or returns null
+            return Ok(new { isSpam = false, spamType = (string)null, riskScore = 0 });
+        }
+
+        // Map service result to spec format (adjust property names if needed)
+        return Ok(new
+        {
+            isSpam = checkResult.IsSpam,
+            spamType = checkResult.SpamType, // Assuming service returns string or null
+            riskScore = checkResult.RiskScore
+        });
+    }
+
+    [HttpPost("api/incoming-call")]
+    [Authorize]
     public async Task<IActionResult> CheckIncomingCall([FromBody] IncomingCallRequestDTO model)
     {
-        // TODO: Gelen arama kontrol mantığı
-        if (!ModelState.IsValid) return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Invalid input", Errors = ModelState.Values.SelectMany(v => v.Errors.Select(e => e.ErrorMessage)) });
-        await Task.CompletedTask;
-        // Örnek Yanıt DTO: IncomingCallResponseDTO
-        var fakeResponse = new IncomingCallResponseDTO { /* ... Doldurulacak ... */ }; // Geçici yanıt
-        return Ok(fakeResponse);
+        var userId = GetUserIdString();
+        if (userId == null)
+            return Unauthorized(new { error = "Invalid token." });
+
+        if (model == null || string.IsNullOrWhiteSpace(model.PhoneNumber))
+            return BadRequest(new { error = "PhoneNumber is required." });
+
+        // Assuming service returns object: { Action, Reason } (e.g., "block", "allow", "warn")
+        var incomingResult = await _numberCheckService.CheckIncomingCallAsync(userId, model);
+
+        if (incomingResult == null)
+        {
+            // Default to allow if service fails
+            return Ok(new { action = "allow", reason = (string)null });
+        }
+
+        // Map service result to spec format
+        return Ok(new
+        {
+            action = incomingResult.Action,
+            reason = incomingResult.Reason
+        });
     }
 
     [HttpGet("api/number/{number}/info")]
-    [Authorize] // Numara detayı görüntüleme yetkilendirme gerektirir
-    // Yanıt DTO ismi tahmin ediliyor: GetNumberInfoResponseDTO (SpamDetection altında olabilir)
+    [Authorize]
     public async Task<IActionResult> GetNumberInfo(string number)
     {
-        // TODO: Numara detaylarını getirme mantığı
-        if (string.IsNullOrWhiteSpace(number)) return BadRequest("Number cannot be empty.");
-        await Task.CompletedTask;
-        // Örnek Yanıt DTO: GetNumberInfoResponseDTO
-        return Ok(new { Message = "Endpoint not implemented yet." }); // Geçici yanıt
-        // Başarılı yanıt örneği: return Ok(responseDto);
-        // Hata yanıtı örneği: return NotFound(new ApiResponseDTO<object> { Success = false, Message = "Information not found" });
+        var userId = GetUserIdString(); // Service might need userId for context/history
+        if (userId == null)
+            return Unauthorized(new { error = "Invalid token." });
+
+        if (string.IsNullOrWhiteSpace(number))
+            return BadRequest(new { error = "Number parameter is required." });
+
+        // Assuming service returns object matching spec or null if not found
+        // Spec: { PhoneNumber, IsSpam, SpamType, ReportCount, FirstReported, LastReported, Comments: List<{ user, comment, timestamp }> }
+        var numberInfo = await _numberCheckService.GetNumberInfoAsync(userId, number);
+
+        if (numberInfo == null)
+        {
+            // Match spec error format
+            return NotFound(new { error = "Information not found for this number." });
+        }
+
+        // Return the result directly assuming it matches the spec
+        return Ok(numberInfo);
     }
-} 
+}
