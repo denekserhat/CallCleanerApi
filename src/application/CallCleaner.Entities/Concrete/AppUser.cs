@@ -10,12 +10,18 @@ namespace CallCleaner.Entities.Concrete
         /// <summary>
         /// Kullanıcının adı ve soyadı
         /// </summary>
-        public string FullName { get; private set; }
+        public string FullName { get; set; }
 
         /// <summary>
         /// Kullanıcının eklendiği tarih
         /// </summary>
-        public DateTime CreatedDate { get; private set; }
+        public DateTime CreatedDate { get; set; }
+
+
+        /// <summary>
+        /// Kullanıcının güncellendiği tarih
+        /// </summary>
+        public DateTime? UpdateDate { get; set; }
 
         /// <summary>
         /// Kullanıcının aktiflik durumu
