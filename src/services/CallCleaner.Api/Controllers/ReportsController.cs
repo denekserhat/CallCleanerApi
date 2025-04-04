@@ -1,8 +1,11 @@
 using CallCleaner.Application.Dtos.Reports; // Varsayılan
 using CallCleaner.Application.Dtos.Core; // Varsayılan
+using CallCleaner.Application.Services; // IReportService için eklendi
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Threading.Tasks;
+using System.Security.Claims; // UserId almak için eklendi
+using System.Linq; // SelectMany için eklendi
 
 namespace CallCleaner.Api.Controllers;
 
@@ -12,21 +15,33 @@ namespace CallCleaner.Api.Controllers;
 [Route("api/reports")]
 public class ReportsController : ControllerBase
 {
-    // TODO: Gerekli servisleri inject et (örneğin IReportService)
-    // public ReportsController(IReportService reportService) { ... }
+    private readonly IReportService _reportService;
+
+    // Constructor enjeksiyonu
+    public ReportsController(IReportService reportService)
+    {
+        _reportService = reportService;
+    }
 
     [HttpPost]
     [Authorize] // Rapor göndermek yetkilendirme gerektirir
     // DTO ismi tahmin ediliyor: SubmitReportRequestDTO
     public async Task<IActionResult> SubmitReport([FromBody] SubmitReportRequestDTO model)
     {
-        // TODO: Spam raporu gönderme mantığı
-        if (!ModelState.IsValid) return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Invalid input", Errors = ModelState.Values.SelectMany(v => v.Errors.Select(e => e.ErrorMessage)) });
-        await Task.CompletedTask;
-        // Örnek Yanıt DTO: SubmitReportResponseDTO
-        return StatusCode(201, new { reportId = "report_xyz789", message = "Report submitted successfully." }); // Geçici yanıt
-        // Başarılı yanıt örneği: return Created("", responseDto);
-        // Hata yanıtı örneği: return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Missing required fields" });
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+
+        if (!ModelState.IsValid) 
+            return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Invalid input", Errors = ModelState.Values.SelectMany(v => v.Errors.Select(e => e.ErrorMessage)) });
+
+        var result = await _reportService.SubmitReportAsync(userId, model);
+        if (result == null)
+        {
+            // Servis geçersiz spam türü için null döndürdü
+            return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Invalid spam type specified." });
+        }
+        // Başarılı durumda 201 Created döndür
+        return CreatedAtAction(null, result); // Yeni oluşturulan kaynağın URI'si belirtilebilir
     }
 
     [HttpGet("recent-calls")]
@@ -34,11 +49,12 @@ public class ReportsController : ControllerBase
     // DTO ismi tahmin ediliyor: GetRecentCallsResponseDTO (List<RecentCallDTO> olabilir)
     public async Task<IActionResult> GetRecentCalls([FromQuery] int limit = 10)
     {
-        // TODO: Son aramaları getirme mantığı (limit kullanılacak)
-        await Task.CompletedTask;
-        // Örnek Yanıt DTO: GetRecentCallsResponseDTO veya List<RecentCallDTO>
-        return Ok(new { Message = "Endpoint not implemented yet.", Limit = limit }); // Geçici yanıt
-        // Başarılı yanıt örneği: return Ok(recentCallsDto);
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+
+        var recentCalls = await _reportService.GetRecentCallsAsync(userId, limit);
+        // Servis şimdilik boş liste döndürüyor
+        return Ok(recentCalls); // List<RecentCallDTO> döndürür
     }
 
     [HttpGet("spam-types")]
@@ -46,10 +62,7 @@ public class ReportsController : ControllerBase
     // DTO ismi tahmin ediliyor: GetSpamTypesResponseDTO (List<SpamTypeDTO> olabilir)
     public async Task<IActionResult> GetSpamTypes()
     {
-        // TODO: Spam türlerini getirme mantığı (sabit liste olabilir)
-        await Task.CompletedTask;
-        // Örnek Yanıt DTO: GetSpamTypesResponseDTO veya List<SpamTypeDTO>
-        return Ok(new { Message = "Endpoint not implemented yet." }); // Geçici yanıt
-        // Başarılı yanıt örneği: return Ok(spamTypesDto);
+        var spamTypes = await _reportService.GetSpamTypesAsync();
+        return Ok(spamTypes); // List<SpamTypeDTO> döndürür
     }
 } 

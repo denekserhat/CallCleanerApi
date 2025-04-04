@@ -27,42 +27,64 @@ public class ReportService : IReportService
 
     public async Task<SubmitReportResponseDTO> SubmitReportAsync(string userId, SubmitReportRequestDTO model)
     {
-        // TODO: Gelen raporu veritabanına kaydet
-        await Task.Delay(10);
-        Console.WriteLine($"Submitting report from user: {userId} for number: {model.PhoneNumber}, Type: {model.SpamType}");
-        // Geçici DTO döndür
+        if (!int.TryParse(userId, out int userIdInt)) 
+            throw new ArgumentException("Invalid User ID format.");
+
+        if (!Enum.TryParse<SpamType>(model.SpamType, true, out var spamTypeEnum))
+        {
+            return null; // Veya BadRequest için uygun bir dönüş
+        }
+
+        var reportedNumber = await _context.ReportedNumbers
+                                        .FirstOrDefaultAsync(n => n.PhoneNumber == model.PhoneNumber);
+        
+        if (reportedNumber == null)
+        {
+            reportedNumber = new ReportedNumber(model.PhoneNumber);
+            _context.ReportedNumbers.Add(reportedNumber);
+            reportedNumber.FirstReportedDate = DateTime.UtcNow;
+            reportedNumber.ReportCount = 1;
+        }
+        else
+        {
+            reportedNumber.ReportCount++;
+            reportedNumber.LastReportedDate = DateTime.UtcNow;
+        }
+
+        var spamReport = new SpamReport
+        {
+            UserId = userIdInt,
+            ReportedNumber = reportedNumber, 
+            PhoneNumberReported = model.PhoneNumber,
+            ReportedSpamType = spamTypeEnum,
+            Description = model.Description,
+            CreatedDate = model.Timestamp ?? DateTime.UtcNow
+        };
+
+        _context.SpamReports.Add(spamReport);
+        await _context.SaveChangesAsync();
+
         return new SubmitReportResponseDTO
         {
-            ReportId = "report_" + Guid.NewGuid().ToString().Substring(0, 8),
+            ReportId = "report_" + spamReport.Id,
             Message = "Report submitted successfully."
         };
     }
 
     public async Task<List<RecentCallDTO>> GetRecentCallsAsync(string userId, int limit)
     {
-        // TODO: Kullanıcının son arama kayıtlarını getir (muhtemelen cihazdan gelen log veya ayrı bir servis)
-        await Task.Delay(10);
-        Console.WriteLine($"Getting recent calls for user: {userId}, Limit: {limit}");
-        // Geçici Liste döndür
-        return new List<RecentCallDTO>
-        {
-            new RecentCallDTO { PhoneNumber = "02121112233", Timestamp = DateTime.UtcNow.AddMinutes(-15) },
-            new RecentCallDTO { PhoneNumber = "05558887766", Timestamp = DateTime.UtcNow.AddMinutes(-45) }
-        };
+        await Task.CompletedTask;
+        Console.WriteLine($"Skipping GetRecentCallsAsync for user: {userId} on server-side.");
+        return new List<RecentCallDTO>();
     }
 
     public async Task<List<SpamTypeDTO>> GetSpamTypesAsync()
     {
-        // TODO: Tanımlı spam türlerini getir (sabit liste veya veritabanı)
+        var spamTypes = Enum.GetValues(typeof(SpamType))
+                            .Cast<SpamType>()
+                            .Select(e => new SpamTypeDTO { Id = e.ToString().ToLowerInvariant(), Label = e.ToString() })
+                            .ToList();
         await Task.CompletedTask;
-        Console.WriteLine("Getting spam types");
-        // Geçici Liste döndür
-        return new List<SpamTypeDTO>
-        {
-            new SpamTypeDTO { Id = "telemarketing", Label = "Telepazarlama" },
-            new SpamTypeDTO { Id = "scam", Label = "Dolandırıcılık" },
-            new SpamTypeDTO { Id = "annoying", Label = "Rahatsız Edici" },
-            new SpamTypeDTO { Id = "other", Label = "Diğer" }
-        };
+        return spamTypes;
     }
 } 

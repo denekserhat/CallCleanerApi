@@ -10,27 +10,27 @@ namespace CallCleaner.Entities.Concrete
         /// <summary>
         /// Kullanıcı tarafından bildiren kişi ID'si
         /// </summary>
-        public int UserId { get; private set; }
+        public int UserId { get; set; }
 
         /// <summary>
         /// Spam bildirimi yapılan numara ID'si
         /// </summary>
-        public int ReportedNumberId { get; private set; }
+        public int ReportedNumberId { get; set; }
 
         /// <summary>
         /// Spam bildirimi yapılan numara
         /// </summary>
-        public string PhoneNumberReported { get; private set; }
+        public string PhoneNumberReported { get; set; }
 
         /// <summary>
         /// Spam bildirimi türü
         /// </summary>
-        public SpamType ReportedSpamType { get; private set; }
+        public SpamType ReportedSpamType { get; set; }
 
         /// <summary>
         /// Spam bildirimi açıklaması
         /// </summary>
-        public string? Description { get; private set; }
+        public string? Description { get; set; }
 
         /// <summary>
         /// Spam bildirimi yapan kişinin bilgileri
@@ -40,7 +40,7 @@ namespace CallCleaner.Entities.Concrete
         /// <summary>
         /// Spam bildirimi yapılan numara bilgileri
         /// </summary>
-        public virtual ReportedNumber ReportedNumber { get; private set; } = null!;
+        public virtual ReportedNumber ReportedNumber { get; set; } = null!;
     }
 
     public enum SpamType

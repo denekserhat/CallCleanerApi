@@ -1,4 +1,6 @@
 using CallCleaner.Entities.Shared;
+using System;
+using System.Collections.Generic;
 
 namespace CallCleaner.Entities.Concrete
 {
@@ -8,6 +10,19 @@ namespace CallCleaner.Entities.Concrete
     public class ReportedNumber : BaseEntity
     {
         /// <summary>
+        /// Constructor eklendi
+        /// </summary>
+        public ReportedNumber(string phoneNumber)
+        {
+            PhoneNumber = phoneNumber;
+            // Diğer başlangıç değerleri burada atanabilir
+            ReportCount = 0;
+            CurrentRiskLevel = SpamRiskLevel.Unknown;
+            SpamReports = new HashSet<SpamReport>();
+            Comments = new HashSet<NumberComment>();
+        }
+
+        /// <summary>
         /// Kullanıcı tarafından bildirilen numara
         /// </summary>
         public string PhoneNumber { get; private set; }
@@ -15,20 +30,20 @@ namespace CallCleaner.Entities.Concrete
         /// <summary>
         /// Engellenen numaranın risk değeri
         /// </summary>
-        public SpamRiskLevel CurrentRiskLevel { get; private set; } = SpamRiskLevel.Unknown;
+        public SpamRiskLevel CurrentRiskLevel { get; set; }
 
         /// <summary>
         /// Engellenen numaranın spam türü
         /// </summary>
-        public string? CommonSpamType { get; private set; }
+        public string? CommonSpamType { get; set; }
 
         /// <summary>
         /// Engel sayısı
         /// </summary>
-        public int ReportCount { get; private set; } = 0;
+        public int ReportCount { get; set; } = 0;
 
         /// <summary>
-        /// Engel bilgileri
+        /// Yorum bilgileri
         /// </summary>
         public virtual ICollection<SpamReport> SpamReports { get; private set; } = new HashSet<SpamReport>();
 
@@ -36,6 +51,16 @@ namespace CallCleaner.Entities.Concrete
         /// Yorum bilgileri
         /// </summary>
         public virtual ICollection<NumberComment> Comments { get; private set; } = new HashSet<NumberComment>();
+
+        /// <summary>
+        /// İlk bildirim tarihi
+        /// </summary>
+        public DateTime? FirstReportedDate { get; set; }
+
+        /// <summary>
+        /// Son bildirim tarihi
+        /// </summary>
+        public DateTime? LastReportedDate { get; set; }
     }
 
 
