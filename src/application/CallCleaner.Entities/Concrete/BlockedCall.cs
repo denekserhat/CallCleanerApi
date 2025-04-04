@@ -10,22 +10,22 @@ namespace CallCleaner.Entities.Concrete
         /// <summary>
         /// Engelleyen kişinin ID'si
         /// </summary>
-        public int UserId { get; private set; }
+        public int UserId { get; set; }
 
         /// <summary>
         /// Engellenen numara
         /// </summary>
-        public string PhoneNumber { get; private set; }
+        public string PhoneNumber { get; set; }
 
         /// <summary>
         /// Engellenen numaranın türü (Algılanan veya Raporlanan)
         /// </summary>
-        public string? CallType { get; private set; }
+        public string? CallType { get; set; }
 
         /// <summary>
         /// Yanlış engel bildirimi durumu
         /// </summary>
-        public bool ReportedAsIncorrect { get; private set; } = false;
+        public bool ReportedAsIncorrect { get; set; } = false;
 
         /// <summary>
         /// Engelleyen kişinin bilgileri
