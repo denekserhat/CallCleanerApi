@@ -3,10 +3,11 @@ using CallCleaner.Application.Dtos.Core;
 using CallCleaner.Application.Dtos.Login;
 using CallCleaner.Application.Services;
 using CallCleaner.Entities.Concrete;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Caching.Memory;
+using System.Text;
 
 namespace CallCleaner.Api.Controllers;
 
@@ -20,7 +21,6 @@ public class AuthController : ControllerBase
     private readonly SignInManager<AppUser> _signInManager;
     private readonly IConfiguration _configuration;
     private readonly IEmailService _emailService;
-    private readonly ISmsService _smsService;
     private readonly ITokenService _tokenService;
     private readonly IMemoryCache _cache;
 
@@ -29,7 +29,6 @@ public class AuthController : ControllerBase
     SignInManager<AppUser> signInManager,
     IConfiguration configuration,
     IEmailService emailService,
-    ISmsService smsService,
     ITokenService tokenService,
     IMemoryCache cache)
     {
@@ -37,7 +36,6 @@ public class AuthController : ControllerBase
         _signInManager = signInManager;
         _configuration = configuration;
         _emailService = emailService;
-        _smsService = smsService;
         _tokenService = tokenService;
         _cache = cache;
     }
@@ -91,7 +89,6 @@ public class AuthController : ControllerBase
             });
         }
 
-
         var existingUser = await _userManager.FindByEmailAsync(model.Email);
         if (existingUser != null)
         {
@@ -120,20 +117,17 @@ public class AuthController : ControllerBase
             });
         }
 
-        var emailCode = new Random().Next(100000, 999999).ToString();
-        var cacheKey = $"email_verification:{appUser.Id}";
-        _cache.Set(cacheKey, emailCode, new MemoryCacheEntryOptions
-        {
-            AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10)
-        });
+        var token = await _userManager.GenerateEmailConfirmationTokenAsync(appUser);
+        var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
+        var confirmationLink = Url.Action(nameof(ConfirmEmail), "Auth", new { userId = appUser.Id, token = encodedToken }, Request.Scheme);
 
-        var body = $"Email adresinizi doğrulamak için kod: {emailCode}";
-        await _emailService.SendMailAsync(appUser.Email, "E-posta Doğrulama Kodu", body);
+        var body = $"Hesabınızı onaylamak için lütfen <a href='{confirmationLink}'>buraya tıklayın</a>.";
+        await _emailService.SendMailAsync(appUser.Email, "E-posta Doğrulama", body);
 
         return Ok(new ApiResponseDTO<RegisterResponseDTO>
         {
             Success = true,
-            Message = "Kullanıcı başarılı! Lütfen e-postanıza gönderilen kodu onaylayın",
+            Message = "Kullanıcı başarıyla oluşturuldu! Lütfen e-postanıza gönderilen link ile hesabınızı onaylayın.",
             Data = new RegisterResponseDTO
             {
                 UserId = appUser.Id,
@@ -151,22 +145,28 @@ public class AuthController : ControllerBase
 
         var user = await _userManager.FindByEmailAsync(model.Email);
         if (user is null)
-            return Problem(
-                statusCode: StatusCodes.Status400BadRequest,
-                title: "Invalid Request",
-                detail: "Invalid email address");
+            return NotFound(new ApiResponseDTO<object>
+            {
+                Success = false,
+                Message = "Bu e-posta adresi ile kayıtlı kullanıcı bulunamadı."
+            });
 
-        var token = await _userManager.GeneratePasswordResetTokenAsync(user);
-        // Send email logic (not implemented)
-
-        return Ok(new ProblemDetails
+        var resetCode = new Random().Next(100000, 999999).ToString();
+        var cacheKey = $"password_reset:{user.Id}";
+        _cache.Set(cacheKey, resetCode, new MemoryCacheEntryOptions
         {
-            Status = StatusCodes.Status200OK,
-            Title = "Success",
-            Detail = "Password reset link has been sent to your email"
+            AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(15)
+        });
+
+        var body = $"Şifrenizi sıfırlamak için kodunuz: {resetCode}";
+        await _emailService.SendMailAsync(user.Email, "Şifre Sıfırlama Kodu", body);
+
+        return Ok(new ApiResponseDTO<object>
+        {
+            Success = true,
+            Message = "Şifre sıfırlama kodu e-posta adresinize gönderildi."
         });
     }
-    [Authorize]
     [HttpPost("reset-password")]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDTO model)
     {
@@ -177,103 +177,97 @@ public class AuthController : ControllerBase
 
         var user = await _userManager.FindByEmailAsync(model.Email);
         if (user is null)
-            return Problem(
-                statusCode: StatusCodes.Status400BadRequest,
-                title: "Invalid Request",
-                detail: "Invalid email address");
-
-        var result = await _userManager.ResetPasswordAsync(user, model.Token, model.NewPassword);
-
-        if (!result.Succeeded)
-        {
-            foreach (var error in result.Errors)
-            {
-                ModelState.AddModelError(string.Empty, error.Description);
-            }
-            return ValidationProblem(ModelState);
-        }
-
-        return Ok(new ProblemDetails
-        {
-            Status = StatusCodes.Status200OK,
-            Title = "Success",
-            Detail = "Password reset successfully"
-        });
-    }
-    [HttpPost("send-confirmation")]
-    public async Task<IActionResult> SendConfirmation([FromBody] SendConfirmationDTO model)
-    {
-        var user = await _userManager.FindByEmailAsync(model.Email);
-        if (user == null)
             return NotFound(new ApiResponseDTO<object>
             {
                 Success = false,
-                Message = "Kullanıcı bulunamadı"
+                Message = "Bu e-posta adresi ile kayıtlı kullanıcı bulunamadı."
             });
 
-        // Email doğrulama
-        if (!string.IsNullOrEmpty(model.Email))
-        {
-            var emailToken = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-            var emailConfirmationLink = Url.Action(nameof(ConfirmEmail), "Authentication",
-                new { email = model.Email, token = emailToken }, Request.Scheme);
+        var cacheKey = $"password_reset:{user.Id}";
+        var storedCode = _cache.Get<string>(cacheKey);
 
-            await _emailService.SendMailAsync(model.Email, "Email Doğrulama",
-                $"Email adresinizi doğrulamak için <a href='{emailConfirmationLink}'>tıklayınız</a>");
-        }
-
-        return Ok(new ApiResponseDTO<object>
-        {
-            Success = true,
-            Message = "Doğrulama kodları gönderildi"
-        });
-    }
-    [HttpPost("confirm-email")]
-    public async Task<IActionResult> ConfirmEmail([FromBody] ConfirmEmailDTO model)
-    {
-
-
-        var user = await _userManager.FindByEmailAsync(model.Email);
-        if (user == null)
-            return NotFound(new ApiResponseDTO<object>
-            {
-                Success = false,
-                Message = "Kullanıcı bulunamadı"
-            });
-
-        var cacheKey = $"email_verification:{user.Id}";
-        var storedCode = _cache.Get(cacheKey);
         if (storedCode == null)
             return BadRequest(new ApiResponseDTO<object>
             {
                 Success = false,
-                Message = "Doğrulama kodu süresi dolmuş veya geçersiz"
+                Message = "Şifre sıfırlama kodu süresi dolmuş veya geçersiz."
             });
 
-        if (storedCode.ToString() != model.Code)
+        if (storedCode != model.Code)
             return BadRequest(new ApiResponseDTO<object>
             {
                 Success = false,
-                Message = "Geçersiz doğrulama kodu"
+                Message = "Geçersiz şifre sıfırlama kodu."
             });
 
+        var identityToken = await _userManager.GeneratePasswordResetTokenAsync(user);
+        var result = await _userManager.ResetPasswordAsync(user, identityToken, model.NewPassword);
 
-        user.EmailConfirmed = true;
-        user.IsActive = true;
-        var updateResult = await _userManager.UpdateAsync(user);
-        if (!updateResult.Succeeded)
+        if (!result.Succeeded)
+        {
             return BadRequest(new ApiResponseDTO<object>
             {
                 Success = false,
-                Message = "Email doğrulanırken hata oluştu",
-                Errors = updateResult.Errors.Select(e => e.Description)
+                Message = "Şifre sıfırlanırken bir hata oluştu.",
+                Errors = result.Errors.Select(e => e.Description)
             });
+        }
 
         _cache.Remove(cacheKey);
         return Ok(new ApiResponseDTO<object>
         {
             Success = true,
-            Message = "Email başarıyla doğrulandı"
+            Message = "Şifreniz başarıyla sıfırlandı."
         });
+    }
+    [HttpGet("confirm-email")]
+    public async Task<IActionResult> ConfirmEmail([FromQuery] string userId, [FromQuery] string token)
+    {
+        if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(token))
+            return BadRequest(new ApiResponseDTO<object>
+            {
+                Success = false,
+                Message = "Kullanıcı ID veya token eksik."
+            });
+
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user == null)
+            return NotFound(new ApiResponseDTO<object>
+            {
+                Success = false,
+                Message = "Kullanıcı bulunamadı."
+            });
+
+        try
+        {
+            var decodedTokenBytes = WebEncoders.Base64UrlDecode(token);
+            var decodedToken = Encoding.UTF8.GetString(decodedTokenBytes);
+
+            var result = await _userManager.ConfirmEmailAsync(user, decodedToken);
+            if (!result.Succeeded)
+                return BadRequest(new ApiResponseDTO<object>
+                {
+                    Success = false,
+                    Message = "E-posta doğrulaması başarısız oldu.",
+                    Errors = result.Errors.Select(e => e.Description)
+                });
+
+            user.IsActive = true;
+            await _userManager.UpdateAsync(user);
+
+            return Ok(new ApiResponseDTO<object>
+            {
+                Success = true,
+                Message = "E-posta başarıyla doğrulandı."
+            });
+        }
+        catch (FormatException)
+        {
+            return BadRequest(new ApiResponseDTO<object>
+            {
+                Success = false,
+                Message = "Geçersiz doğrulama linki."
+            });
+        }
     }
 }
