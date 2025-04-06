@@ -57,7 +57,7 @@ public class ReportsController : ControllerBase
     [HttpGet("spam-types")]
     public async Task<IActionResult> GetSpamTypes()
     {
-        var spamTypes = await _reportService.GetSpamTypesAsync();
+        var spamTypes = _reportService.GetSpamTypes();
         return Ok(spamTypes ?? new List<SpamTypeDTO>());
     }
 }

@@ -50,7 +50,7 @@ public class EmailService : IEmailService
         string mail = $"Merhaba,<br>" +
             $"Kayıt işlemini gerçekleştirmek için onay kodunuz: {code}";
 
-        await SendMailAsync(to, $"BaseTestApp Onay Kodu", mail);
+        await SendMailAsync(to, $"CallCleaner Onay Kodu", mail);
 
     }
     public async Task SendPasswordResetMailAsync(string to, int userId, string resetToken)

@@ -31,7 +31,7 @@ public class BlockedCallsService : IBlockedCallsService
 
     public async Task<GetBlockedCallsResponseDTO> GetBlockedCallsAsync(string userId, int page, int limit)
     {
-        if (!int.TryParse(userId, out int userIdInt)) throw new ArgumentException("Invalid User ID format.");
+        if (!int.TryParse(userId, out int userIdInt)) throw new ArgumentException("Geçersiz Kullanıcı ID formatı.");
 
         var query = _context.BlockedCalls.Where(bc => bc.UserId == userIdInt);
 
@@ -58,7 +58,7 @@ public class BlockedCallsService : IBlockedCallsService
 
     public async Task<GetBlockedCallsStatsResponseDTO> GetStatsAsync(string userId)
     {
-        if (!int.TryParse(userId, out int userIdInt)) throw new ArgumentException("Invalid User ID format.");
+        if (!int.TryParse(userId, out int userIdInt)) throw new ArgumentException("Geçersiz Kullanıcı ID formatı.");
 
         var todayStart = DateTime.UtcNow.Date;
         var weekStart = DateTime.UtcNow.Date.AddDays(-(int)DateTime.UtcNow.DayOfWeek + 1);
@@ -79,26 +79,29 @@ public class BlockedCallsService : IBlockedCallsService
 
     public async Task<ApiResponseDTO<object>> DeleteBlockedCallAsync(string userId, string callId)
     {
-        if (!int.TryParse(userId, out int userIdInt)) return new ApiResponseDTO<object> { Success = false, Message = "Invalid User ID format." };
-        if (!int.TryParse(callId, out int callIdInt)) return new ApiResponseDTO<object> { Success = false, Message = "Invalid Call ID format." };
+        if (!int.TryParse(userId, out int userIdInt)) return new ApiResponseDTO<object> { Success = false, Message = "Geçersiz Kullanıcı ID formatı." };
+        if (!int.TryParse(callId, out int callIdInt))
+        {
+            Console.WriteLine($"Uyarı: callId ('{callId}') int tipine dönüştürülemedi. ID formatını kontrol edin.");
+        }
 
         var callToDelete = await _context.BlockedCalls
                                       .FirstOrDefaultAsync(bc => bc.Id == callIdInt && bc.UserId == userIdInt);
 
         if (callToDelete == null)
         {
-            return new ApiResponseDTO<object> { Success = false, Message = "Blocked call record not found." };
+            return new ApiResponseDTO<object> { Success = false, Message = "Engellenen arama kaydı bulunamadı." };
         }
 
         _context.BlockedCalls.Remove(callToDelete);
         await _context.SaveChangesAsync();
 
-        return new ApiResponseDTO<object> { Success = true, Message = "Blocked call record deleted successfully." };
+        return new ApiResponseDTO<object> { Success = true, Message = "Engellenen arama kaydı başarıyla silindi." };
     }
 
     public async Task<ApiResponseDTO<object>> DeleteAllBlockedCallsAsync(string userId)
     {
-        if (!int.TryParse(userId, out int userIdInt)) return new ApiResponseDTO<object> { Success = false, Message = "Invalid User ID format." };
+        if (!int.TryParse(userId, out int userIdInt)) return new ApiResponseDTO<object> { Success = false, Message = "Geçersiz Kullanıcı ID formatı." };
 
         var callsToDelete = await _context.BlockedCalls
                                         .Where(bc => bc.UserId == userIdInt)
@@ -106,35 +109,33 @@ public class BlockedCallsService : IBlockedCallsService
 
         if (!callsToDelete.Any())
         {
-            // Silinecek kayıt yoksa başarılı kabul edilebilir
-            return new ApiResponseDTO<object> { Success = true, Message = "No blocked call records found to delete." };
+            return new ApiResponseDTO<object> { Success = true, Message = "Silinecek engellenen arama kaydı bulunamadı." };
         }
 
         _context.BlockedCalls.RemoveRange(callsToDelete);
         await _context.SaveChangesAsync();
 
-        return new ApiResponseDTO<object> { Success = true, Message = "All blocked call records deleted successfully." };
+        return new ApiResponseDTO<object> { Success = true, Message = "Tüm engellenen arama kayıtları başarıyla silindi." };
     }
 
     public async Task<ApiResponseDTO<object>> ReportWronglyBlockedAsync(string userId, string callId)
     {
-        if (!int.TryParse(userId, out int userIdInt)) return new ApiResponseDTO<object> { Success = false, Message = "Invalid User ID format." };
-        if (!int.TryParse(callId, out int callIdInt)) return new ApiResponseDTO<object> { Success = false, Message = "Invalid Call ID format." };
+        if (!int.TryParse(userId, out int userIdInt)) return new ApiResponseDTO<object> { Success = false, Message = "Geçersiz Kullanıcı ID formatı." };
+        if (!int.TryParse(callId, out int callIdInt))
+        {
+            Console.WriteLine($"Uyarı: callId ('{callId}') int tipine dönüştürülemedi. ID formatını kontrol edin.");
+        }
 
         var callToReport = await _context.BlockedCalls
                                         .FirstOrDefaultAsync(bc => bc.Id == callIdInt && bc.UserId == userIdInt);
 
         if (callToReport == null)
         {
-            return new ApiResponseDTO<object> { Success = false, Message = "Blocked call record not found." };
+            return new ApiResponseDTO<object> { Success = false, Message = "Engellenen arama kaydı bulunamadı." };
         }
 
-        // Set accessor düzeltildi
         callToReport.ReportedAsIncorrect = true;
-        // IMPLEMENT ET: Yanlış engelleme raporlaması için ek işlemler gerekebilir (örn. loglama, ayrı tabloya kayıt).
-
         await _context.SaveChangesAsync();
-
-        return new ApiResponseDTO<object> { Success = true, Message = "Call reported as incorrectly blocked." };
+        return new ApiResponseDTO<object> { Success = true, Message = "Arama yanlış engellendi olarak raporlandı." };
     }
 }

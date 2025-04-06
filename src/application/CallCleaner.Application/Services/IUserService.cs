@@ -81,9 +81,9 @@ public class UserService : IUserService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error occurred while fetching users. PageNumber: {PageNumber}, PageSize: {PageSize}",
+            _logger.LogError(ex, "Kullanıcıları getirirken hata oluştu. Sayfa Numarası: {PageNumber}, Sayfa Boyutu: {PageSize}",
                 pageNumber, pageSize);
-            throw new ApplicationException("Failed to retrieve users", ex);
+            throw new ApplicationException("Kullanıcıları alırken bir hata oluştu", ex);
         }
     }
     public async Task<UserDTO> GetUserByIdAsync(int id, CancellationToken cancellationToken)
@@ -105,7 +105,7 @@ public class UserService : IUserService
 
             if (user == null)
             {
-                throw new KeyNotFoundException($"User with ID {id} not found");
+                throw new KeyNotFoundException($"ID {id} ile kullanıcı bulunamadı");
             }
 
             var userDto = _mapper.Map<UserDTO>(user);
@@ -115,8 +115,8 @@ public class UserService : IUserService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error occurred while fetching user with ID: {UserId}", id);
-            throw new ApplicationException($"Failed to retrieve user with ID {id}", ex);
+            _logger.LogError(ex, "ID {UserId} ile kullanıcı getirilirken hata oluştu", id);
+            throw new ApplicationException($"ID {id} ile kullanıcı alınırken bir hata oluştu", ex);
         }
     }
     public async Task<UserDTO> CreateUserAsync(CreateUserDTO createUserDTO, CancellationToken cancellationToken)
@@ -128,7 +128,7 @@ public class UserService : IUserService
                 u.Email == createUserDTO.Email,
                 cancellationToken).ConfigureAwait(false))
             {
-                throw new InvalidOperationException("Username or email already exists");
+                throw new InvalidOperationException("Kullanıcı adı veya e-posta zaten mevcut");
             }
 
             var user = _mapper.Map<AppUser>(createUserDTO);
@@ -136,8 +136,6 @@ public class UserService : IUserService
 
             _context.Users.Add(user);
             await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
-            await _cacheService.RemoveByPrefixAsync(USERS_PAGE_CACHE_PREFIX);
             return _mapper.Map<UserDTO>(user);
         }
         catch (InvalidOperationException)
@@ -146,8 +144,8 @@ public class UserService : IUserService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error occurred while creating user");
-            throw new ApplicationException("Failed to create user", ex);
+            _logger.LogError(ex, "Kullanıcı oluşturulurken hata oluştu");
+            throw new ApplicationException("Kullanıcı oluşturulurken bir hata oluştu", ex);
         }
     }
     public async Task<UserDTO> UpdateUserAsync(int id, UpdateUserDTO updateUserDTO, CancellationToken cancellationToken)
@@ -160,7 +158,7 @@ public class UserService : IUserService
 
             if (user == null)
             {
-                throw new InvalidOperationException($"User with ID {id} not found");
+                throw new InvalidOperationException($"ID {id} ile kullanıcı bulunamadı");
             }
 
             if (updateUserDTO.Username != null &&
@@ -170,7 +168,7 @@ public class UserService : IUserService
                     u.Id != id,
                     cancellationToken).ConfigureAwait(false))
             {
-                throw new InvalidOperationException("Username is already taken");
+                throw new InvalidOperationException("Kullanıcı adı zaten alınmış");
             }
 
             _mapper.Map(updateUserDTO, user);
@@ -178,14 +176,13 @@ public class UserService : IUserService
             await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
             await _cacheService.RemoveAsync($"{USER_CACHE_KEY_PREFIX}{id}");
-            await _cacheService.RemoveByPrefixAsync(USERS_PAGE_CACHE_PREFIX);
 
             return _mapper.Map<UserDTO>(user);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error occurred while updating user with ID: {UserId}", id);
-            throw new ApplicationException($"Failed to update user with ID {id}", ex);
+            _logger.LogError(ex, "ID {UserId} ile kullanıcı güncellenirken hata oluştu", id);
+            throw new ApplicationException($"ID {id} ile kullanıcı güncellenirken bir hata oluştu", ex);
         }
     }
     public async Task<bool> DeleteUserAsync(int id, CancellationToken cancellationToken)
@@ -204,14 +201,13 @@ public class UserService : IUserService
             await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
             await _cacheService.RemoveAsync($"{USER_CACHE_KEY_PREFIX}{id}");
-            await _cacheService.RemoveByPrefixAsync(USERS_PAGE_CACHE_PREFIX);
 
             return true;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error occurred while deleting user with ID: {UserId}", id);
-            throw new ApplicationException($"Failed to delete user with ID {id}", ex);
+            _logger.LogError(ex, "ID {UserId} ile kullanıcı silinirken hata oluştu", id);
+            throw new ApplicationException($"ID {id} ile kullanıcı silinirken bir hata oluştu", ex);
         }
     }
     public async Task<bool> CheckUserExistsAsync(int userId, CancellationToken cancellationToken)
@@ -227,7 +223,7 @@ public class UserService : IUserService
 
         if (user == null)
         {
-            throw new KeyNotFoundException($"User with ID {userId} not found");
+            throw new KeyNotFoundException($"ID {userId} ile kullanıcı bulunamadı");
         }
 
         return user;
