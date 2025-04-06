@@ -49,26 +49,6 @@ builder.Services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
 builder.Services.AddDbContext<DataContext>(option => option.UseNpgsql(builder.Configuration.GetConnectionString("PostgreConnection")));
 builder.Services.AddMemoryCache();
 
-//Jwt security ayarları
-//builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-//    .AddJwtBearer("Admin", options =>
-//    {
-//        options.TokenValidationParameters = new()
-//        {
-//            ValidateAudience = true, //Oluşturulacak token değerini kimlerin/hangi originlerin/sitelerin kullanıcı belirlediğimiz değerdir. -> www.bilmemne.com
-//            ValidateIssuer = true, //Oluşturulacak token değerini kimin dağıttını ifade edeceğimiz alandır. -> www.myapi.com
-//            ValidateLifetime = true, //Oluşturulan token değerinin süresini kontrol edecek olan doğrulamadır.
-//            ValidateIssuerSigningKey = true, //Üretilecek token değerinin uygulamamıza ait bir değer olduğunu ifade eden suciry key verisinin doğrulanmasıdır.
-
-//            ValidAudience = builder.Configuration["Token:Audience"],
-//            ValidIssuer = builder.Configuration["Token:Issuer"],
-//            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Token:SecurityKey"])),
-//            LifetimeValidator = (notBefore, expires, securityToken, validationParameters) => expires != null ? expires > DateTime.UtcNow : false,
-
-//            NameClaimType = ClaimTypes.Name //JWT üzerinde Name claimne karşılık gelen değeri AppUser.Identity.Name propertysinden elde edebiliriz.
-//        };
-//    });
-
 builder.Services.AddIdentity<AppUser, AppRole>(options =>
 {
     options.Password.RequiredLength = 6;
@@ -102,7 +82,7 @@ builder.Services.AddCors(o => o.AddPolicy("AllowAll", builder =>
     builder.AllowAnyOrigin()
            .AllowAnyMethod()
            .AllowAnyHeader()
-           .AllowCredentials()
+           //.AllowCredentials()
            .SetIsOriginAllowed(_ => true);
 }));
 
@@ -123,6 +103,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
