@@ -42,8 +42,9 @@ public class CacheService : ICacheService
         _memoryCache.Remove(key);
         return Task.CompletedTask;
     }
-    public Task RemoveByPrefixAsync(string prefix)
+    public async Task RemoveByPrefixAsync(string prefix)
     {
-        throw new NotImplementedException();
+        // TODO: IMemoryCache doğrudan prefix ile silmeyi desteklemiyor.
+        // Bunu düşüneceğim
     }
 }

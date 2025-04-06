@@ -1,11 +1,9 @@
-using System;
-
 namespace CallCleaner.Application.Dtos.Settings
 {
     public class WhitelistItemDTO
     {
-        public string Number { get; set; }
-        public string? Name { get; set; } // Opsiyonel
+        public string PhoneNumber { get; set; } = string.Empty;
+        public string? Name { get; set; }
         public DateTime AddedAt { get; set; }
     }
-} 
+}

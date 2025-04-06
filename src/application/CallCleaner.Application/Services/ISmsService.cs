@@ -18,7 +18,6 @@ public class SmsService : ISmsService
 
     public async Task SendSmsAsync(string phoneNumber, string message)
     {
-        // SMS gönderme implementasyonu
-        // Twilio, Nexmo, vb. kullanılabilir
+        // TODO: SMS entegrasyonu yapılacak
     }
 }

@@ -9,7 +9,6 @@ namespace CallCleaner.Application.Services;
 
 public interface IBlockedCallsService
 {
-    // GetBlockedCalls için pagination ve userId parametreleri eklendi
     Task<GetBlockedCallsResponseDTO> GetBlockedCallsAsync(string userId, int page, int limit);
     Task<GetBlockedCallsStatsResponseDTO> GetStatsAsync(string userId);
     Task<ApiResponseDTO<object>> DeleteBlockedCallAsync(string userId, string callId);
@@ -23,7 +22,6 @@ public class BlockedCallsService : IBlockedCallsService
     private readonly UserManager<AppUser> _userManager;
     private readonly AutoMapper.IMapper _mapper;
 
-    // Constructor enjeksiyonu
     public BlockedCallsService(DataContext context, UserManager<AppUser> userManager, AutoMapper.IMapper mapper)
     {
         _context = context;
@@ -35,22 +33,17 @@ public class BlockedCallsService : IBlockedCallsService
     {
         if (!int.TryParse(userId, out int userIdInt)) throw new ArgumentException("Invalid User ID format.");
 
-        // Sayfalama için temel sorgu
         var query = _context.BlockedCalls.Where(bc => bc.UserId == userIdInt);
 
-        // Toplam kayıt sayısı
         var totalCount = await query.CountAsync();
 
-        // Sayfalanmış veriyi çekme (Timestamp yerine CreatedDate kullanıldı)
         var blockedCalls = await query.OrderByDescending(bc => bc.CreatedDate)
                                       .Skip((page - 1) * limit)
                                       .Take(limit)
                                       .ToListAsync();
 
-        // DTO'ya map'leme (AutoMapper varsayımı)
         var mappedCalls = _mapper.Map<List<BlockedCallDTO>>(blockedCalls);
 
-        // Yanıt DTO'sunu oluşturma
         return new GetBlockedCallsResponseDTO
         {
             Calls = mappedCalls,
@@ -68,8 +61,7 @@ public class BlockedCallsService : IBlockedCallsService
         if (!int.TryParse(userId, out int userIdInt)) throw new ArgumentException("Invalid User ID format.");
 
         var todayStart = DateTime.UtcNow.Date;
-        var weekStart = DateTime.UtcNow.Date.AddDays(-(int)DateTime.UtcNow.DayOfWeek); // Haftanın başlangıcı (Pazar varsayımı)
-        // Veya: CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek kullanarak
+        var weekStart = DateTime.UtcNow.Date.AddDays(-(int)DateTime.UtcNow.DayOfWeek + 1);
 
         var userBlockedCalls = _context.BlockedCalls.Where(bc => bc.UserId == userIdInt);
 
@@ -139,7 +131,7 @@ public class BlockedCallsService : IBlockedCallsService
 
         // Set accessor düzeltildi
         callToReport.ReportedAsIncorrect = true;
-        // TODO: Belki bir loglama veya ayrı bir tabloya kayıt eklenebilir.
+        // IMPLEMENT ET: Yanlış engelleme raporlaması için ek işlemler gerekebilir (örn. loglama, ayrı tabloya kayıt).
 
         await _context.SaveChangesAsync();
 

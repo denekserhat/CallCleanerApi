@@ -123,13 +123,11 @@ public class SettingsService : ISettingsService
             return new ApiResponseDTO<object> { Success = false, Message = "Number already exists in the whitelist." };
         }
         var newEntry = _mapper.Map<WhitelistEntry>(model);
-        newEntry.UserId = userIdInt; // Set accessor artık public
-                                     // newEntry.CreatedDate BaseEntity tarafından otomatik ayarlanmalı (veya elle ayarlanabilir)
+        newEntry.UserId = userIdInt;
         newEntry.CreatedDate = DateTime.UtcNow;
 
         _context.WhitelistEntries.Add(newEntry);
         await _context.SaveChangesAsync();
-        // IsCreated flag'i kaldırıldı
         return new ApiResponseDTO<object> { Success = true, Message = "Number added to whitelist successfully." };
     }
 
@@ -140,7 +138,6 @@ public class SettingsService : ISettingsService
                                         .FirstOrDefaultAsync(w => w.UserId == userIdInt && w.PhoneNumber == number);
         if (entryToRemove == null)
         {
-            // IsNotFound flag'i kaldırıldı
             return new ApiResponseDTO<object> { Success = false, Message = "Number not found in the whitelist." };
         }
         _context.WhitelistEntries.Remove(entryToRemove);

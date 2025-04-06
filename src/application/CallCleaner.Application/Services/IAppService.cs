@@ -12,14 +12,11 @@ public interface IAppService
 
 public class AppService : IAppService
 {
-    // TODO: Gerekli bağımlılıkları inject et (örn. IConfiguration)
-    // public AppService(IConfiguration configuration) { ... }
 
+    // TODO: Versiyon bilgileri appsettings den alınacak
     public async Task<GetAppVersionResponseDTO> GetAppVersionAsync()
     {
-        // TODO: Uygulama sürüm bilgilerini config'den veya sabit olarak getir
         await Task.CompletedTask;
-        Console.WriteLine("Getting app version info");
         return new GetAppVersionResponseDTO
         {
             LatestVersion = "1.2.0",
@@ -27,11 +24,11 @@ public class AppService : IAppService
             UpdateUrl = "market://details?id=com.callcleaner"
         };
     }
+
+    // TODO: Gerekli izinleri appsettings den al.
     public async Task<List<PermissionDTO>> GetRequiredPermissionsAsync()
     {
-        // TODO: Gerekli izinleri sabit liste veya config'den getir
         await Task.CompletedTask;
-        Console.WriteLine("Getting required permissions");
         return new List<PermissionDTO>
         {
             new PermissionDTO { Id = "READ_CALL_LOG", Reason = "Gelen aramaları tespit etmek için." },
@@ -39,13 +36,11 @@ public class AppService : IAppService
             new PermissionDTO { Id = "ANSWER_PHONE_CALLS", Reason = "Aramaları engellemek için." }
         };
     }
-
+    // TODO: Gerekli izinler için doğrulama mantığını uygula
     public async Task<VerifyPermissionsResponseDTO> VerifyPermissionsAsync(int userId, VerifyPermissionsRequestDTO model)
     {
-        // TODO: Kullanıcının verdiği izinleri kontrol et (belki loglama?)
-        await Task.Delay(10);
-        Console.WriteLine($"Verifying permissions for user: {userId}");
-        // Geçici yanıt
+        await Task.CompletedTask;
+
         var required = await GetRequiredPermissionsAsync();
         var grantedSet = new HashSet<string>(model.GrantedPermissions ?? new List<string>());
         var missing = required.Where(p => !grantedSet.Contains(p.Id)).Select(p => p.Id).ToList();
@@ -58,11 +53,11 @@ public class AppService : IAppService
         };
     }
 
+    // TODO: Gizlilik politikası bilgilerini appsettings den al
     public async Task<GetPrivacyPolicyResponseDTO> GetPrivacyPolicyAsync()
     {
-        // TODO: Gizlilik politikası bilgilerini config'den veya sabit olarak getir
         await Task.CompletedTask;
-        Console.WriteLine("Getting privacy policy info");
+        Console.WriteLine("Gizlilik politikası bilgileri alınıyor");
         return new GetPrivacyPolicyResponseDTO
         {
             Url = "https://example.com/privacy",

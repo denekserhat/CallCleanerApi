@@ -34,7 +34,7 @@ public class EmailService : IEmailService
             mail.To.Add(to);
         mail.Subject = subject;
         mail.Body = body;
-        mail.From = new(_configuration["Mail:Username"], "BaseTestApp", System.Text.Encoding.UTF8);
+        mail.From = new(_configuration["Mail:Username"], "CallCleaner", System.Text.Encoding.UTF8);
 
         SmtpClient smtp = new();
         smtp.Credentials = new NetworkCredential(_configuration["Mail:Username"], _configuration["Mail:Password"]);

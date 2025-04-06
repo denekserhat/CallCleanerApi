@@ -8,12 +8,9 @@ namespace CallCleaner.Application.Services;
 
 public interface IReportService
 {
-    // SubmitReport için userId eklendi
     Task<SubmitReportResponseDTO> SubmitReportAsync(string userId, SubmitReportRequestDTO model);
-    // GetRecentCalls için userId ve limit eklendi
     Task<List<RecentCallDTO>> GetRecentCallsAsync(string userId, int limit);
-    // GetSpamTypes için parametreye gerek yok (genel bilgi)
-    Task<List<SpamTypeDTO>> GetSpamTypesAsync();
+    List<SpamTypeDTO> GetSpamTypes();
 }
 
 
@@ -23,7 +20,6 @@ public class ReportService : IReportService
     private readonly UserManager<AppUser> _userManager;
     private readonly AutoMapper.IMapper _mapper;
 
-    // Constructor enjeksiyonu
     public ReportService(DataContext context, UserManager<AppUser> userManager, AutoMapper.IMapper mapper)
     {
         _context = context;
@@ -34,11 +30,11 @@ public class ReportService : IReportService
     public async Task<SubmitReportResponseDTO> SubmitReportAsync(string userId, SubmitReportRequestDTO model)
     {
         if (!int.TryParse(userId, out int userIdInt))
-            throw new ArgumentException("Invalid User ID format.");
+            throw new ArgumentException("Geçersiz Kullanıcı ID formatı.");
 
         if (!Enum.TryParse<SpamType>(model.SpamType, true, out var spamTypeEnum))
         {
-            return null; // Veya BadRequest için uygun bir dönüş
+            return null; // Geçersiz spam türü
         }
 
         var reportedNumber = await _context
@@ -74,24 +70,26 @@ public class ReportService : IReportService
         return new SubmitReportResponseDTO
         {
             ReportId = "report_" + spamReport.Id,
-            Message = "Report submitted successfully."
+            Message = "Rapor başarıyla gönderildi."
         };
     }
 
     public async Task<List<RecentCallDTO>> GetRecentCallsAsync(string userId, int limit)
     {
-        await Task.CompletedTask;
-        Console.WriteLine($"Skipping GetRecentCallsAsync for user: {userId} on server-side.");
+        // IMPLEMENT ET: Kullanıcının son arama kayıtlarını getirme mantığını uygula.
+        // Bu verinin kaynağı (istemci, başka bir servis?) netleştirilmelidir.
+        // Şimdilik boş liste döndürülüyor.
+        Console.WriteLine($"Sunucu tarafında GetRecentCallsAsync atlanıyor: {userId}");
+        await Task.CompletedTask; // Async metot için geçici olarak eklendi, IMPLEMENT ET yorumuna uygun doldurulmalı.
         return new List<RecentCallDTO>();
     }
 
-    public async Task<List<SpamTypeDTO>> GetSpamTypesAsync()
+    public List<SpamTypeDTO> GetSpamTypes()
     {
         var spamTypes = Enum.GetValues(typeof(SpamType))
                             .Cast<SpamType>()
                             .Select(e => new SpamTypeDTO { Id = e.ToString().ToLowerInvariant(), Label = e.ToString() })
                             .ToList();
-        await Task.CompletedTask;
         return spamTypes;
     }
 }
