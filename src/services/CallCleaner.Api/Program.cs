@@ -1,4 +1,3 @@
-using CallCleaner.Api.ApiDocs;
 using CallCleaner.Application.Services;
 using CallCleaner.Application.Validations;
 using CallCleaner.Core.Aspects;
@@ -8,8 +7,8 @@ using CallCleaner.Entities.Concrete;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
+using Scalar.AspNetCore;
 using Swashbuckle.AspNetCore.Filters;
-using Swashbuckle.AspNetCore.SwaggerUI;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -34,8 +33,6 @@ builder.Services.AddControllers(opt => opt.Filters.Add(typeof(ValidateModelAttri
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
-    options.OperationFilter<SwaggerDefaultValues>();
-    //options.IncludeXmlComments(Path.ChangeExtension(typeof(Program).Assembly.Location, ".xml"));
     options.AddSecurityDefinition("oauth2", new OpenApiSecurityScheme
     {
         In = ParameterLocation.Header,
@@ -95,16 +92,12 @@ builder.Services.AddCors(o => o.AddPolicy("AllowAll", builder =>
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
+    app.UseSwagger(c =>
     {
-        // Sayfadaki ögelerin expand özelliğini kapatır. Sayfa boyutunu düşürmek ve donmaları
-        c.DocExpansion(DocExpansion.List);
-        c.SwaggerEndpoint($"/swagger/v1/swagger.json", "CallCleaner v1 API");
+        c.RouteTemplate = "openapi/{documentName}.json";
     });
 }
 
@@ -112,5 +105,6 @@ app.UseHttpsRedirection();
 app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
+app.MapScalarApiReference();
 app.MapControllers();
 app.Run();
