@@ -69,12 +69,18 @@ builder.Services.AddIdentity<AppUser, AppRole>(options =>
     .AddErrorDescriber<CustomIdentityValidator>()
     .AddDefaultTokenProviders();
 
+builder.Services.AddScoped<IAppService, AppService>();
+builder.Services.AddScoped<IBlockedCallsService, BlockedCallsService>();
 builder.Services.AddScoped<ICacheService, CacheService>();
-builder.Services.AddScoped<IUserService, UserService>();
-builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<INumberCheckService, NumberCheckService>();
 builder.Services.AddScoped<IPasswordService, PasswordService>();
+builder.Services.AddScoped<IReportService, ReportService>();
+builder.Services.AddScoped<ISettingsService, SettingsService>();
 builder.Services.AddScoped<ISmsService, SmsService>();
+builder.Services.AddScoped<ISyncService, SyncService>();
+builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddScoped<IUserService, UserService>();
 
 
 builder.Services.AddCors(o => o.AddPolicy("AllowAll", builder =>
