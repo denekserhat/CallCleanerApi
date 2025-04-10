@@ -38,7 +38,7 @@ public class NumberCheckController : ControllerBase
         {
             // Return default non-spam result if service fails or returns null
             return Ok(new { isSpam = false, spamType = (string)null, riskScore = 0 });
-        }
+    }
 
         // Map service result to spec format (adjust property names if needed)
         return Ok(new
@@ -101,4 +101,4 @@ public class NumberCheckController : ControllerBase
         // Return the result directly assuming it matches the spec
         return Ok(numberInfo);
     }
-}
+} 

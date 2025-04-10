@@ -23,6 +23,7 @@ namespace CallCleaner.DataAccess
         public DbSet<ReportedNumber> ReportedNumbers { get; set; }
         public DbSet<NumberComment> NumberComments { get; set; }
         public DbSet<BlockedCall> BlockedCalls { get; set; }
+        public DbSet<UserRefreshToken> UserRefreshTokens { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {

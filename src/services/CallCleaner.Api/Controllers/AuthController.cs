@@ -8,6 +8,9 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using System.Security.Claims;
+using System.Threading.Tasks;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
 
 namespace CallCleaner.Api.Controllers;
 
@@ -44,24 +47,71 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> Login([FromBody] LoginRequestDTO model)
     {
         if (model == null || string.IsNullOrWhiteSpace(model.Email) || string.IsNullOrWhiteSpace(model.Password))
-            return BadRequest(new { error = "Email and password are required." });
+            return BadRequest(new { error = "E-posta ve şifre gereklidir." });
 
         var user = await _userManager.FindByEmailAsync(model.Email);
         if (user == null || !(await _userManager.CheckPasswordAsync(user, model.Password)))
         {
-            return Unauthorized(new { error = "Invalid email or password." });
+            return Unauthorized(new { error = "Geçersiz e-posta veya şifre." });
         }
 
-        var userFullName = user.FullName;
+        // Generate JWT
+        var accessToken = _tokenService.GenerateJwtToken(user);
+        // Generate and store Refresh Token
+        var refreshToken = await _tokenService.GenerateAndStoreRefreshTokenAsync(user.Id);
 
-        var token = _tokenService.GenerateJwtToken(user);
-
-        return Ok(new
+        // Return both tokens using the new DTO
+        return Ok(new TokenResponseDTO
         {
-            userId = user.Id,
-            token = token,
-            name = userFullName
+            UserId = user.Id,
+            FullName = user.FullName, // Or Name depending on your AppUser model
+            AccessToken = accessToken,
+            RefreshToken = refreshToken.RefreshToken // Return the token string
         });
+    }
+
+    [HttpPost("refresh-token")]
+    public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequestDTO model)
+    {
+         if (model == null || string.IsNullOrWhiteSpace(model.RefreshToken))
+            return BadRequest(new { error = "Yenileme tokenı gereklidir." });
+
+        (string? newAccessToken, UserRefreshToken? newRefreshToken) = 
+            await _tokenService.ValidateAndUseRefreshTokenAsync(model.RefreshToken);
+
+        if (newAccessToken == null || newRefreshToken == null)
+        {
+            return Unauthorized(new { error = "Geçersiz veya süresi dolmuş yenileme tokenı." }); 
+        }
+        
+        var user = await _userManager.FindByIdAsync(newRefreshToken.UserId.ToString());
+        var fullName = user?.FullName;
+        
+        return Ok(new TokenResponseDTO
+        {
+            UserId = newRefreshToken.UserId, 
+            FullName = fullName,
+            AccessToken = newAccessToken,
+            RefreshToken = newRefreshToken.RefreshToken
+        });
+    }
+
+    [HttpPost("logout")]
+    [Authorize] // Optional: Only logged-in users can logout
+    public async Task<IActionResult> Logout([FromBody] RevokeTokenRequestDTO model)
+    {
+        if (model == null || string.IsNullOrWhiteSpace(model.RefreshToken))
+            return BadRequest(new { error = "Yenileme tokenı gereklidir." });
+
+        var revoked = await _tokenService.RevokeRefreshTokenAsync(model.RefreshToken);
+
+        if (!revoked)
+        {
+            // Maybe return NotFound or BadRequest if token doesn't exist or already revoked
+            return BadRequest(new { error = "Yenileme tokenı iptal edilemedi veya bulunamadı." });
+        }
+
+        return Ok(new { message = "Başarıyla çıkış yapıldı." });
     }
 
     [HttpPost("register")]
