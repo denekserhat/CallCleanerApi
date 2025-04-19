@@ -1,6 +1,4 @@
 using CallCleaner.Entities.Shared;
-using System;
-using System.Collections.Generic;
 
 namespace CallCleaner.Entities.Concrete
 {

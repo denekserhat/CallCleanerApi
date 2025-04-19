@@ -95,4 +95,4 @@ public class SyncController : ControllerBase
         // Use spec success format
         return Ok(new { message = "Settings synced successfully." });
     }
-}
+} 
