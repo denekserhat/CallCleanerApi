@@ -2,9 +2,14 @@
 
 namespace CallCleaner.Api.Controllers
 {
-    public class TestController : Controller
+    [Produces("application/json")]
+    [Consumes("application/json")]
+    [ApiController]
+    [Route("api/test")]
+    public class TestController : ControllerBase
     {
-        public IActionResult Index()
+        [HttpGet("get-test")]
+        public IActionResult GetTestString()
         {
             return Ok("TEST");
         }
