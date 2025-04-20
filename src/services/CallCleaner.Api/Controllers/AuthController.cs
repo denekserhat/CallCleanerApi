@@ -7,10 +7,10 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using System.Security.Claims;
-using System.Threading.Tasks;
-using Microsoft.IdentityModel.Tokens;
-using System.IdentityModel.Tokens.Jwt;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 
 namespace CallCleaner.Api.Controllers;
 
@@ -26,6 +26,7 @@ public class AuthController : ControllerBase
     private readonly IEmailService _emailService;
     private readonly ITokenService _tokenService;
     private readonly IMemoryCache _cache;
+    private readonly ILogger<AuthController> _logger;
 
     public AuthController(
     UserManager<AppUser> userManager,
@@ -33,7 +34,8 @@ public class AuthController : ControllerBase
     IConfiguration configuration,
     IEmailService emailService,
     ITokenService tokenService,
-    IMemoryCache cache)
+    IMemoryCache cache,
+    ILogger<AuthController> logger)
     {
         _userManager = userManager;
         _signInManager = signInManager;
@@ -41,6 +43,7 @@ public class AuthController : ControllerBase
         _emailService = emailService;
         _tokenService = tokenService;
         _cache = cache;
+        _logger = logger;
     }
 
     [HttpPost("login")]
@@ -73,23 +76,23 @@ public class AuthController : ControllerBase
     [HttpPost("refresh-token")]
     public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequestDTO model)
     {
-         if (model == null || string.IsNullOrWhiteSpace(model.RefreshToken))
+        if (model == null || string.IsNullOrWhiteSpace(model.RefreshToken))
             return BadRequest(new { error = "Yenileme tokenı gereklidir." });
 
-        (string? newAccessToken, UserRefreshToken? newRefreshToken) = 
+        (string? newAccessToken, UserRefreshToken? newRefreshToken) =
             await _tokenService.ValidateAndUseRefreshTokenAsync(model.RefreshToken);
 
         if (newAccessToken == null || newRefreshToken == null)
         {
-            return Unauthorized(new { error = "Geçersiz veya süresi dolmuş yenileme tokenı." }); 
+            return Unauthorized(new { error = "Geçersiz veya süresi dolmuş yenileme tokenı." });
         }
-        
+
         var user = await _userManager.FindByIdAsync(newRefreshToken.UserId.ToString());
         var fullName = user?.FullName;
-        
+
         return Ok(new TokenResponseDTO
         {
-            UserId = newRefreshToken.UserId, 
+            UserId = newRefreshToken.UserId,
             FullName = fullName,
             AccessToken = newAccessToken,
             RefreshToken = newRefreshToken.RefreshToken
@@ -115,36 +118,85 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("register")]
+    [ProducesResponseType(StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Register([FromBody] RegisterRequestDTO model)
     {
-        if (model == null || string.IsNullOrWhiteSpace(model.Email) || string.IsNullOrWhiteSpace(model.Password) || string.IsNullOrWhiteSpace(model.FullName))
-            return BadRequest(new { error = "FullName, email, and password are required." });
+        _logger.LogInformation("E-posta {Email} için kayıt denemesi başlatıldı", model?.Email);
 
+        if (model == null || !ModelState.IsValid)
+        {
+            _logger.LogWarning("Geçersiz model durumu nedeniyle kayıt denemesi başarısız oldu: {ModelState}",
+                             JsonSerializer.Serialize(ModelState.Values.SelectMany(v => v.Errors)));
+            return BadRequest(ModelState);
+        }
+
+        _logger.LogDebug("E-posta {Email} için mevcut kullanıcı kontrol ediliyor", model.Email);
         var existingUser = await _userManager.FindByEmailAsync(model.Email);
         if (existingUser != null)
         {
-            return BadRequest(new { error = "Email already registered." });
+            _logger.LogWarning("Kayıt denemesi başarısız: E-posta {Email} zaten kayıtlı.", model.Email);
+            return BadRequest(new { error = "Bu e-posta adresi zaten kayıtlı." });
         }
 
-        var appUser = new AppUser
+        var newUser = new AppUser
         {
             UserName = model.Email,
             Email = model.Email,
             FullName = model.FullName,
-            EmailConfirmed = true
+            EmailConfirmed = false // E-posta onayı gerektirdiği için false olarak başlat
         };
 
-        var createResult = await _userManager.CreateAsync(appUser, model.Password);
-        if (!createResult.Succeeded)
+        _logger.LogInformation("E-posta {Email} ile yeni kullanıcı oluşturulmaya çalışılıyor", newUser.Email);
+        var result = await _userManager.CreateAsync(newUser, model.Password);
+
+        if (!result.Succeeded)
         {
-            return BadRequest(new { error = "User registration failed.", details = createResult.Errors.Select(e => e.Description) });
+            _logger.LogError("E-posta {Email} için kullanıcı oluşturma başarısız oldu. Hatalar: {IdentityErrors}",
+                             newUser.Email,
+                             JsonSerializer.Serialize(result.Errors));
+
+            foreach (var error in result.Errors)
+            {
+                ModelState.AddModelError(string.Empty, error.Description);
+            }
+            return BadRequest(ModelState);
         }
 
-        return CreatedAtAction(nameof(Register), new
+        _logger.LogInformation("E-posta {Email} için {UserId} ID'li kullanıcı başarıyla oluşturuldu. Onay e-postası gönderilecek.", newUser.Id, newUser.Email);
+
+        // Onay e-postasını gönder
+        try
         {
-            userId = appUser.Id,
-            message = "User registered successfully."
-        });
+            var token = await _userManager.GenerateEmailConfirmationTokenAsync(newUser);
+            // URL oluştururken scheme (http/https) ve host'u request'ten almak önemlidir.
+            var callbackUrl = Url.Action(nameof(ConfirmEmail), "Auth", new { userId = newUser.Id, token = token }, Request.Scheme, Request.Host.ToString());
+
+            if (string.IsNullOrEmpty(callbackUrl))
+            {
+                _logger.LogError("E-posta onay URL'i oluşturulamadı. Kullanıcı ID: {UserId}", newUser.Id);
+                // Kullanıcı oluşturuldu ama e-posta gönderilemedi. Bu durumu nasıl ele alacağınıza karar verin.
+                // Belki bir iç hata döndürebilir veya işlemi başarılı kabul edip daha sonra manuel gönderme şansı verebilirsiniz.
+                // Şimdilik başarılı kabul edelim, ancak loglamak önemli.
+            }
+            else
+            {
+                await _emailService.SendMailAsync(newUser.Email,
+                                               "Hesabınızı Onaylayın",
+                                               $"Lütfen buraya tıklayarak hesabınızı onaylayın: <a href='{HtmlEncoder.Default.Encode(callbackUrl)}'>Onay Linki</a>");
+                _logger.LogInformation("Onay e-postası başarıyla gönderildi: {Email}", newUser.Email);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Kullanıcı {UserId} için onay e-postası gönderilirken hata oluştu.", newUser.Id);
+            // E-posta gönderimi başarısız olsa bile kullanıcı oluşturuldu.
+            // Bu hatayı nasıl yöneteceğinize karar verin (örn. kullanıcıya bilgi ver, arka planda tekrar dene vs.)
+        }
+
+        // Return 201 Created
+        return CreatedAtAction(nameof(Register), new { userId = newUser.Id }, new { message = "Kullanıcı başarıyla kaydedildi. Lütfen e-postanızı kontrol ederek hesabınızı onaylayın." });
     }
 
     [HttpPost("forgot-password")]
@@ -237,22 +289,38 @@ public class AuthController : ControllerBase
     [HttpGet("confirm-email")]
     public async Task<IActionResult> ConfirmEmail([FromQuery] string userId, [FromQuery] string token)
     {
+        _logger.LogInformation("E-posta onayı denemesi başlatıldı. Kullanıcı ID: {UserId}, Token: {Token}", userId, token);
+
         if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(token))
-            return BadRequest(new ApiResponseDTO<object>
-            {
-                Success = false,
-                Message = "Kullanıcı ID veya token eksik."
-            });
+        {
+            _logger.LogWarning("E-posta onayı başarısız: Kullanıcı ID veya token eksik.");
+            return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Gerekli bilgiler eksik." });
+        }
 
         var user = await _userManager.FindByIdAsync(userId);
         if (user == null)
-            return NotFound(new ApiResponseDTO<object>
-            {
-                Success = false,
-                Message = "Kullanıcı bulunamadı."
-            });
+        {
+            _logger.LogWarning("E-posta onayı başarısız: Kullanıcı bulunamadı. ID: {UserId}", userId);
+            return NotFound(new ApiResponseDTO<object> { Success = false, Message = "Kullanıcı bulunamadı." });
+        }
 
-        return Ok("Email confirmation endpoint - needs review based on requirements.");
+        // Token'ı doğrula ve kullanıcının EmailConfirmed alanını güncelle
+        var result = await _userManager.ConfirmEmailAsync(user, token);
+        if (result.Succeeded)
+        {
+            _logger.LogInformation("E-posta başarıyla onaylandı. Kullanıcı ID: {UserId}", userId);
+            // Başarılı onay sonrası kullanıcıyı nereye yönlendireceğinize veya ne mesaj göstereceğinize karar verin.
+            // Örneğin bir HTML sayfası veya basit bir mesaj döndürebilirsiniz.
+            return Ok(new ApiResponseDTO<object> { Success = true, Message = "E-postanız başarıyla onaylandı." });
+        }
+        else
+        {
+            _logger.LogError("E-posta onayı başarısız oldu. Kullanıcı ID: {UserId}, Hatalar: {IdentityErrors}",
+                             userId,
+                             JsonSerializer.Serialize(result.Errors));
+            // Hataları kullanıcıya göstermek yerine genel bir mesaj vermek daha iyi olabilir.
+            return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "E-posta onayı başarısız oldu. Lütfen tekrar deneyin veya destek ile iletişime geçin." });
+        }
     }
 
     [HttpGet("verify-token")]
