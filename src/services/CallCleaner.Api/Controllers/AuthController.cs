@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Logging;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -47,89 +46,133 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
+    [ProducesResponseType(typeof(ApiResponseDTO<TokenResponseDTO>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Login([FromBody] LoginRequestDTO model)
     {
-        if (model == null || string.IsNullOrWhiteSpace(model.Email) || string.IsNullOrWhiteSpace(model.Password))
-            return BadRequest(new { error = "E-posta ve şifre gereklidir." });
+        if (model == null || !ModelState.IsValid)
+        {
+            var errors = ModelState.Values.SelectMany(v => v.Errors.Select(e => e.ErrorMessage));
+            return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Eksik veya geçersiz bilgi sağlandı.", Errors = errors });
+        }
 
         var user = await _userManager.FindByEmailAsync(model.Email);
         if (user == null || !(await _userManager.CheckPasswordAsync(user, model.Password)))
         {
-            return Unauthorized(new { error = "Geçersiz e-posta veya şifre." });
+            _logger.LogWarning("E-posta {Email} için giriş başarısız: Geçersiz kimlik bilgileri.", model.Email);
+            return Unauthorized(new ApiResponseDTO<object> { Success = false, Message = "Geçersiz e-posta veya şifre." });
         }
 
-        // Generate JWT
-        var accessToken = _tokenService.GenerateJwtToken(user);
-        // Generate and store Refresh Token
-        var refreshToken = await _tokenService.GenerateAndStoreRefreshTokenAsync(user.Id);
-
-        // Return both tokens using the new DTO
-        return Ok(new TokenResponseDTO
+        try
         {
-            UserId = user.Id,
-            FullName = user.FullName, // Or Name depending on your AppUser model
-            AccessToken = accessToken,
-            RefreshToken = refreshToken.RefreshToken // Return the token string
-        });
+            var accessToken = _tokenService.GenerateJwtToken(user);
+            var refreshToken = await _tokenService.GenerateAndStoreRefreshTokenAsync(user.Id);
+
+            _logger.LogInformation("Kullanıcı {UserId} başarıyla giriş yaptı.", user.Id);
+            var responseData = new TokenResponseDTO
+            {
+                UserId = user.Id,
+                FullName = user.FullName,
+                AccessToken = accessToken,
+                RefreshToken = refreshToken.RefreshToken
+            };
+            return Ok(new ApiResponseDTO<TokenResponseDTO> { Success = true, Data = responseData, Message = "Giriş başarılı." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Kullanıcı {UserId} için token oluşturma/saklama sırasında hata oluştu", user.Id);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ApiResponseDTO<object> { Success = false, Message = "Giriş işlemi sırasında sunucuda bir hata oluştu." });
+        }
     }
 
     [HttpPost("refresh-token")]
+    [ProducesResponseType(typeof(ApiResponseDTO<TokenResponseDTO>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequestDTO model)
     {
         if (model == null || string.IsNullOrWhiteSpace(model.RefreshToken))
-            return BadRequest(new { error = "Yenileme tokenı gereklidir." });
+            return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Yenileme tokenı gereklidir." });
 
-        (string? newAccessToken, UserRefreshToken? newRefreshToken) =
-            await _tokenService.ValidateAndUseRefreshTokenAsync(model.RefreshToken);
-
-        if (newAccessToken == null || newRefreshToken == null)
+        try
         {
-            return Unauthorized(new { error = "Geçersiz veya süresi dolmuş yenileme tokenı." });
+            (string? newAccessToken, UserRefreshToken? newRefreshToken) =
+                await _tokenService.ValidateAndUseRefreshTokenAsync(model.RefreshToken);
+
+            if (newAccessToken == null || newRefreshToken == null)
+            {
+                _logger.LogWarning("Geçersiz veya süresi dolmuş yenileme tokenı ile token yenileme denemesi başarısız oldu.");
+                return Unauthorized(new ApiResponseDTO<object> { Success = false, Message = "Oturumunuz zaman aşımına uğradı veya geçersiz. Lütfen tekrar giriş yapın." });
+            }
+
+            var user = await _userManager.FindByIdAsync(newRefreshToken.UserId.ToString());
+            _logger.LogInformation("Kullanıcı {UserId} için token başarıyla yenilendi.", newRefreshToken.UserId);
+            var responseData = new TokenResponseDTO
+            {
+                UserId = newRefreshToken.UserId,
+                FullName = user?.FullName,
+                AccessToken = newAccessToken,
+                RefreshToken = newRefreshToken.RefreshToken
+            };
+            return Ok(new ApiResponseDTO<TokenResponseDTO> { Success = true, Data = responseData, Message = "Token başarıyla yenilendi." });
         }
-
-        var user = await _userManager.FindByIdAsync(newRefreshToken.UserId.ToString());
-        var fullName = user?.FullName;
-
-        return Ok(new TokenResponseDTO
+        catch (Exception ex)
         {
-            UserId = newRefreshToken.UserId,
-            FullName = fullName,
-            AccessToken = newAccessToken,
-            RefreshToken = newRefreshToken.RefreshToken
-        });
+            _logger.LogError(ex, "Token yenileme sırasında beklenmedik bir hata oluştu.");
+            return StatusCode(StatusCodes.Status500InternalServerError, new ApiResponseDTO<object> { Success = false, Message = "Token yenileme sırasında sunucuda bir hata oluştu." });
+        }
     }
 
     [HttpPost("logout")]
-    [Authorize] // Optional: Only logged-in users can logout
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Logout([FromBody] RevokeTokenRequestDTO model)
     {
         if (model == null || string.IsNullOrWhiteSpace(model.RefreshToken))
-            return BadRequest(new { error = "Yenileme tokenı gereklidir." });
-
-        var revoked = await _tokenService.RevokeRefreshTokenAsync(model.RefreshToken);
-
-        if (!revoked)
         {
-            // Maybe return NotFound or BadRequest if token doesn't exist or already revoked
-            return BadRequest(new { error = "Yenileme tokenı iptal edilemedi veya bulunamadı." });
+            return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Oturumu sonlandırmak için yenileme tokenı gereklidir." });
         }
 
-        return Ok(new { message = "Başarıyla çıkış yapıldı." });
+        string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        try
+        {
+            var revoked = await _tokenService.RevokeRefreshTokenAsync(model.RefreshToken);
+
+            if (!revoked)
+            {
+                _logger.LogWarning("Kullanıcı {UserId} için yenileme tokenı iptal edilemedi. Token geçersiz veya zaten iptal edilmiş olabilir.", userId ?? "Bilinmeyen");
+                return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Oturum sonlandırılamadı. Geçersiz veya süresi dolmuş token." });
+            }
+
+            _logger.LogInformation("Kullanıcı {UserId} başarıyla çıkış yaptı (yenileme tokenı iptal edildi).", userId ?? "Bilinmeyen");
+            return Ok(new ApiResponseDTO<object> { Success = true, Message = "Başarıyla çıkış yapıldı." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Kullanıcı {UserId} için çıkış işlemi sırasında beklenmedik bir hata oluştu.", userId ?? "Bilinmeyen");
+            return StatusCode(StatusCodes.Status500InternalServerError, new ApiResponseDTO<object> { Success = false, Message = "Çıkış işlemi sırasında sunucuda bir hata oluştu." });
+        }
     }
 
     [HttpPost("register")]
-    [ProducesResponseType(StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Register([FromBody] RegisterRequestDTO model)
     {
-        _logger.LogInformation("E-posta {Email} için kayıt denemesi başlatıldı", model?.Email);
-
         if (model == null || !ModelState.IsValid)
         {
             _logger.LogWarning("Geçersiz model durumu nedeniyle kayıt denemesi başarısız oldu: {ModelState}",
                              JsonSerializer.Serialize(ModelState.Values.SelectMany(v => v.Errors)));
-            return BadRequest(ModelState);
+            var errors = ModelState.Values.SelectMany(v => v.Errors.Select(e => e.ErrorMessage));
+            return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Gerekli bilgiler eksik veya geçersiz.", Errors = errors });
         }
 
         _logger.LogDebug("E-posta {Email} için mevcut kullanıcı kontrol ediliyor", model.Email);
@@ -137,7 +180,7 @@ public class AuthController : ControllerBase
         if (existingUser != null)
         {
             _logger.LogWarning("Kayıt denemesi başarısız: E-posta {Email} zaten kayıtlı.", model.Email);
-            return BadRequest(new { error = "Bu e-posta adresi zaten kayıtlı." });
+            return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Bu e-posta adresi zaten kayıtlı." });
         }
 
         var newUser = new AppUser
@@ -145,10 +188,10 @@ public class AuthController : ControllerBase
             UserName = model.Email,
             Email = model.Email,
             FullName = model.FullName,
-            EmailConfirmed = false // E-posta onayı gerektirdiği için false olarak başlat
+            EmailConfirmed = false
         };
 
-        _logger.LogInformation("E-posta {Email} ile yeni kullanıcı oluşturulmaya çalışılıyor", newUser.Email);
+        _logger.LogDebug("E-posta {Email} ile yeni kullanıcı oluşturulmaya çalışılıyor", newUser.Email);
         var result = await _userManager.CreateAsync(newUser, model.Password);
 
         if (!result.Succeeded)
@@ -161,140 +204,146 @@ public class AuthController : ControllerBase
             {
                 ModelState.AddModelError(string.Empty, error.Description);
             }
-            return BadRequest(ModelState);
+            return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Kullanıcı kaydı oluşturulamadı.", Errors = result.Errors.Select(e => e.Description) });
         }
 
-        _logger.LogInformation("E-posta {Email} için {UserId} ID'li kullanıcı başarıyla oluşturuldu. Onay e-postası gönderilecek.", newUser.Id, newUser.Email);
+        _logger.LogInformation("E-posta {Email} için {UserId} ID'li kullanıcı başarıyla oluşturuldu.", newUser.Id, newUser.Email);
 
-        // Onay e-postasını gönder
         try
         {
             var token = await _userManager.GenerateEmailConfirmationTokenAsync(newUser);
-            // URL oluştururken scheme (http/https) ve host'u request'ten almak önemlidir.
             var callbackUrl = Url.Action(nameof(ConfirmEmail), "Auth", new { userId = newUser.Id, token = token }, Request.Scheme, Request.Host.ToString());
 
             if (string.IsNullOrEmpty(callbackUrl))
             {
                 _logger.LogError("E-posta onay URL'i oluşturulamadı. Kullanıcı ID: {UserId}", newUser.Id);
-                // Kullanıcı oluşturuldu ama e-posta gönderilemedi. Bu durumu nasıl ele alacağınıza karar verin.
-                // Belki bir iç hata döndürebilir veya işlemi başarılı kabul edip daha sonra manuel gönderme şansı verebilirsiniz.
-                // Şimdilik başarılı kabul edelim, ancak loglamak önemli.
             }
             else
             {
                 await _emailService.SendMailAsync(newUser.Email,
                                                "Hesabınızı Onaylayın",
                                                $"Lütfen buraya tıklayarak hesabınızı onaylayın: <a href='{HtmlEncoder.Default.Encode(callbackUrl)}'>Onay Linki</a>");
-                _logger.LogInformation("Onay e-postası başarıyla gönderildi: {Email}", newUser.Email);
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Kullanıcı {UserId} için onay e-postası gönderilirken hata oluştu.", newUser.Id);
-            // E-posta gönderimi başarısız olsa bile kullanıcı oluşturuldu.
-            // Bu hatayı nasıl yöneteceğinize karar verin (örn. kullanıcıya bilgi ver, arka planda tekrar dene vs.)
         }
 
-        // Return 201 Created
-        return CreatedAtAction(nameof(Register), new { userId = newUser.Id }, new { message = "Kullanıcı başarıyla kaydedildi. Lütfen e-postanızı kontrol ederek hesabınızı onaylayın." });
+        var responseData = new { userId = newUser.Id };
+        return CreatedAtAction(nameof(Register),
+                               new { userId = newUser.Id },
+                               new ApiResponseDTO<object> { Success = true, Data = responseData, Message = "Kullanıcı başarıyla kaydedildi. Lütfen e-postanızı kontrol ederek hesabınızı onaylayın." });
     }
 
     [HttpPost("forgot-password")]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDTO model)
     {
-        ArgumentNullException.ThrowIfNull(model);
-
         if (!ModelState.IsValid)
-            return ValidationProblem(ModelState);
+        {
+            var errors = ModelState.Values.SelectMany(v => v.Errors.Select(e => e.ErrorMessage));
+            return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Geçersiz istek: E-posta adresi gereklidir veya formatı hatalı.", Errors = errors });
+        }
 
         var user = await _userManager.FindByEmailAsync(model.Email);
         if (user is null)
-            return NotFound(new ApiResponseDTO<object>
-            {
-                Success = false,
-                Message = "Bu e-posta adresi ile kayıtlı kullanıcı bulunamadı."
-            });
-
-        var resetCode = new Random().Next(100000, 999999).ToString();
-        var cacheKey = $"password_reset:{user.Id}";
-        _cache.Set(cacheKey, resetCode, new MemoryCacheEntryOptions
         {
-            AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(15)
-        });
+            _logger.LogWarning("Var olmayan e-posta adresi için şifre sıfırlama talebi: {Email}", model.Email);
+            return NotFound(new ApiResponseDTO<object> { Success = false, Message = "Bu e-posta adresi ile kayıtlı kullanıcı bulunamadı." });
+        }
 
-        var body = $"Şifrenizi sıfırlamak için kodunuz: {resetCode}";
-        await _emailService.SendMailAsync(user.Email, "Şifre Sıfırlama Kodu", body);
-
-        return Ok(new ApiResponseDTO<object>
+        try
         {
-            Success = true,
-            Message = "Şifre sıfırlama kodu e-posta adresinize gönderildi."
-        });
+            var resetCode = _tokenService.GenerateRandomCode();
+            var cacheKey = $"password_reset:{user.Id}";
+            _cache.Set(cacheKey, resetCode, TimeSpan.FromMinutes(15));
+
+            var body = $"Şifrenizi sıfırlamak için kodunuz: {resetCode}";
+            await _emailService.SendMailAsync(user.Email, "Şifre Sıfırlama Kodu", body);
+
+            _logger.LogInformation("Kullanıcı {UserId} için şifre sıfırlama kodu başarıyla gönderildi: {Email}", user.Id, user.Email);
+            return Ok(new ApiResponseDTO<object> { Success = true, Message = "Şifre sıfırlama kodu e-posta adresinize gönderildi." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Kullanıcı {UserId} için şifre sıfırlama e-postası gönderilemedi.", user.Id);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ApiResponseDTO<object> { Success = false, Message = "Şifre sıfırlama e-postası gönderilirken sunucuda bir hata oluştu." });
+        }
     }
 
     [HttpPost("reset-password")]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDTO model)
     {
-        ArgumentNullException.ThrowIfNull(model);
-
         if (!ModelState.IsValid)
-            return ValidationProblem(ModelState);
+        {
+            var errors = ModelState.Values.SelectMany(v => v.Errors.Select(e => e.ErrorMessage));
+            return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Gerekli bilgiler eksik veya geçersiz.", Errors = errors });
+        }
 
         var user = await _userManager.FindByEmailAsync(model.Email);
         if (user is null)
-            return NotFound(new ApiResponseDTO<object>
-            {
-                Success = false,
-                Message = "Bu e-posta adresi ile kayıtlı kullanıcı bulunamadı."
-            });
-
-        var cacheKey = $"password_reset:{user.Id}";
-        var storedCode = _cache.Get<string>(cacheKey);
-
-        if (storedCode == null)
-            return BadRequest(new ApiResponseDTO<object>
-            {
-                Success = false,
-                Message = "Şifre sıfırlama kodu süresi dolmuş veya geçersiz."
-            });
-
-        if (storedCode != model.Code)
-            return BadRequest(new ApiResponseDTO<object>
-            {
-                Success = false,
-                Message = "Geçersiz şifre sıfırlama kodu."
-            });
-
-        var identityToken = await _userManager.GeneratePasswordResetTokenAsync(user);
-        var result = await _userManager.ResetPasswordAsync(user, identityToken, model.NewPassword);
-
-        if (!result.Succeeded)
         {
-            return BadRequest(new ApiResponseDTO<object>
-            {
-                Success = false,
-                Message = "Şifre sıfırlanırken bir hata oluştu.",
-                Errors = result.Errors.Select(e => e.Description)
-            });
+            _logger.LogWarning("Var olmayan e-posta için şifre sıfırlama denemesi: {Email}", model.Email);
+            return NotFound(new ApiResponseDTO<object> { Success = false, Message = "Bu e-posta adresi ile kayıtlı kullanıcı bulunamadı." });
         }
 
-        _cache.Remove(cacheKey);
-        return Ok(new ApiResponseDTO<object>
+        var cacheKey = $"password_reset:{user.Id}";
+        if (!_cache.TryGetValue(cacheKey, out string? storedCode))
         {
-            Success = true,
-            Message = "Şifreniz başarıyla sıfırlandı."
-        });
+            _logger.LogWarning("Kullanıcı {UserId} için şifre sıfırlama başarısız: Kodun süresi dolmuş veya bulunamadı.", user.Id);
+            return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Şifre sıfırlama kodu süresi dolmuş veya geçersiz." });
+        }
+
+        if (storedCode != model.Code)
+        {
+            _logger.LogWarning("Kullanıcı {UserId} için şifre sıfırlama başarısız: Sağlanan kod geçersiz.", user.Id);
+            return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Geçersiz şifre sıfırlama kodu." });
+        }
+
+        try
+        {
+            var identityToken = await _userManager.GeneratePasswordResetTokenAsync(user);
+            var result = await _userManager.ResetPasswordAsync(user, identityToken, model.NewPassword);
+
+            if (!result.Succeeded)
+            {
+                _logger.LogError("Kullanıcı {UserId} için şifre sıfırlama başarısız oldu. Hatalar: {IdentityErrors}",
+                                 user.Id,
+                                 JsonSerializer.Serialize(result.Errors));
+                return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Şifre sıfırlanırken bir hata oluştu.", Errors = result.Errors.Select(e => e.Description) });
+            }
+
+            _cache.Remove(cacheKey);
+            _logger.LogInformation("Kullanıcı {UserId} için şifre başarıyla sıfırlandı.", user.Id);
+            return Ok(new ApiResponseDTO<object> { Success = true, Message = "Şifreniz başarıyla sıfırlandı." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Kullanıcı {UserId} için şifre sıfırlama sırasında beklenmedik bir hata oluştu.", user.Id);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ApiResponseDTO<object> { Success = false, Message = "Şifre sıfırlama sırasında sunucuda beklenmedik bir hata oluştu." });
+        }
     }
 
     [HttpGet("confirm-email")]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ConfirmEmail([FromQuery] string userId, [FromQuery] string token)
     {
-        _logger.LogInformation("E-posta onayı denemesi başlatıldı. Kullanıcı ID: {UserId}, Token: {Token}", userId, token);
+        _logger.LogInformation("E-posta onayı denemesi başlatıldı. Kullanıcı ID: {UserId}", userId);
 
         if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(token))
         {
             _logger.LogWarning("E-posta onayı başarısız: Kullanıcı ID veya token eksik.");
-            return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Gerekli bilgiler eksik." });
+            return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Gerekli onay bilgileri eksik." });
         }
 
         var user = await _userManager.FindByIdAsync(userId);
@@ -304,13 +353,10 @@ public class AuthController : ControllerBase
             return NotFound(new ApiResponseDTO<object> { Success = false, Message = "Kullanıcı bulunamadı." });
         }
 
-        // Token'ı doğrula ve kullanıcının EmailConfirmed alanını güncelle
         var result = await _userManager.ConfirmEmailAsync(user, token);
         if (result.Succeeded)
         {
             _logger.LogInformation("E-posta başarıyla onaylandı. Kullanıcı ID: {UserId}", userId);
-            // Başarılı onay sonrası kullanıcıyı nereye yönlendireceğinize veya ne mesaj göstereceğinize karar verin.
-            // Örneğin bir HTML sayfası veya basit bir mesaj döndürebilirsiniz.
             return Ok(new ApiResponseDTO<object> { Success = true, Message = "E-postanız başarıyla onaylandı." });
         }
         else
@@ -318,79 +364,108 @@ public class AuthController : ControllerBase
             _logger.LogError("E-posta onayı başarısız oldu. Kullanıcı ID: {UserId}, Hatalar: {IdentityErrors}",
                              userId,
                              JsonSerializer.Serialize(result.Errors));
-            // Hataları kullanıcıya göstermek yerine genel bir mesaj vermek daha iyi olabilir.
             return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "E-posta onayı başarısız oldu. Lütfen tekrar deneyin veya destek ile iletişime geçin." });
         }
     }
 
     [HttpGet("verify-token")]
     [Authorize]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public IActionResult VerifyToken()
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
 
         if (userId == null)
         {
-            return Unauthorized(new { error = "Invalid or expired token." });
+            _logger.LogError("Yetkilendirilmiş istekte kullanıcı ID'si bulunamadı.");
+            return Unauthorized();
         }
 
-        return Ok(new { userId = userId, isValid = true });
+        _logger.LogInformation("Token başarıyla doğrulandı: Kullanıcı {UserId}", userId);
+        return Ok(new ApiResponseDTO<object> { Success = true, Data = new { userId = userId, isValid = true }, Message = "Token geçerli." });
     }
 
     [HttpPut("update-profile")]
     [Authorize]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponseDTO<object>), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequestDTO model)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (userId == null)
         {
-            return Unauthorized(new { error = "Invalid token." });
+            _logger.LogError("Yetkilendirilmiş profil güncelleme isteğinde kullanıcı ID'si bulunamadı.");
+            return Unauthorized(new ApiResponseDTO<object> { Success = false, Message = "Geçersiz oturum bilgisi." });
         }
 
-        if (model == null || string.IsNullOrWhiteSpace(model.Name))
+        if (model == null || !ModelState.IsValid)
         {
-            return BadRequest(new { error = "Invalid profile data provided." });
+            _logger.LogWarning("Kullanıcı {UserId} için geçersiz model nedeniyle profil güncelleme başarısız: {ModelState}",
+                             userId,
+                             JsonSerializer.Serialize(ModelState.Values.SelectMany(v => v.Errors)));
+            var errors = ModelState.Values.SelectMany(v => v.Errors.Select(e => e.ErrorMessage));
+            return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Sağlanan bilgiler eksik veya geçersiz.", Errors = errors });
         }
 
         var user = await _userManager.FindByIdAsync(userId);
         if (user == null)
         {
-            return NotFound(new { error = "User not found." });
+            _logger.LogError("Profil güncelleme başarısız: Yetkili olmasına rağmen {UserId} ID'li kullanıcı bulunamadı.", userId);
+            return NotFound(new ApiResponseDTO<object> { Success = false, Message = "Kullanıcı bulunamadı." });
         }
 
         bool changed = false;
+        IdentityResult? passwordResult = null;
 
-        if (user.FullName != model.Name)
+        try
         {
-            user.FullName = model.Name;
-            changed = true;
-        }
-
-        if (!string.IsNullOrWhiteSpace(model.NewPassword))
-        {
-            var passwordChangeToken = await _userManager.GeneratePasswordResetTokenAsync(user);
-            var passwordResult = await _userManager.ResetPasswordAsync(user, passwordChangeToken, model.NewPassword);
-            if (!passwordResult.Succeeded)
+            if (user.FullName != model.Name && !string.IsNullOrWhiteSpace(model.Name))
             {
-                return BadRequest(new { error = "Invalid profile data provided.", details = passwordResult.Errors.Select(e => e.Description) });
+                user.FullName = model.Name;
+                changed = true;
             }
-            changed = true;
-        }
 
-        if (changed)
-        {
-            var updateResult = await _userManager.UpdateAsync(user);
-            if (!updateResult.Succeeded)
+            if (!string.IsNullOrWhiteSpace(model.NewPassword))
             {
-                return BadRequest(new { error = "Profile update failed.", details = updateResult.Errors.Select(e => e.Description) });
+                var passwordChangeToken = await _userManager.GeneratePasswordResetTokenAsync(user);
+                passwordResult = await _userManager.ResetPasswordAsync(user, passwordChangeToken, model.NewPassword);
+                if (!passwordResult.Succeeded)
+                {
+                    _logger.LogError("Kullanıcı {UserId} için profil güncelleme sırasında şifre değiştirme başarısız. Hatalar: {IdentityErrors}",
+                                     userId,
+                                     JsonSerializer.Serialize(passwordResult.Errors));
+                    return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Şifre güncellenemedi.", Errors = passwordResult.Errors.Select(e => e.Description) });
+                }
+                changed = true;
             }
-        }
 
-        return Ok(new
+            if (changed)
+            {
+                var updateResult = await _userManager.UpdateAsync(user);
+                if (!updateResult.Succeeded)
+                {
+                    _logger.LogError("Kullanıcı {UserId} için profil güncelleme başarısız oldu. Hatalar: {IdentityErrors}",
+                                     userId,
+                                     JsonSerializer.Serialize(updateResult.Errors));
+                    return BadRequest(new ApiResponseDTO<object> { Success = false, Message = "Profil güncelleme başarısız oldu.", Errors = updateResult.Errors.Select(e => e.Description) });
+                }
+                _logger.LogInformation("Kullanıcı {UserId} için profil başarıyla güncellendi.", userId);
+            }
+            else
+            {
+                _logger.LogInformation("Kullanıcı {UserId} için profil güncelleme isteği alındı, ancak değişiklik yapılmadı.", userId);
+            }
+
+            return Ok(new ApiResponseDTO<object> { Success = true, Data = new { userId = user.Id, name = user.FullName }, Message = "Profil başarıyla güncellendi." });
+        }
+        catch (Exception ex)
         {
-            userId = user.Id,
-            name = user.FullName,
-            message = "Profile updated successfully."
-        });
+            _logger.LogError(ex, "Kullanıcı {UserId} için profil güncelleme sırasında beklenmedik bir hata oluştu.", userId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ApiResponseDTO<object> { Success = false, Message = "Profil güncellenirken sunucuda bir hata oluştu." });
+        }
     }
 }
